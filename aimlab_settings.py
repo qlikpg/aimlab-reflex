@@ -14,7 +14,7 @@ def migrate_settings(data):
         return values
     if isinstance(data.get('camera'),str):
         values['camera'] = data['camera']
-    for key,choices in [('color',('green','red')),('mode',(*MODES,'video-calibration')),('input_method',('laser','mouse')),('target_style',TARGET_STYLES)]:
+    for key,choices in [('color',('green','red')),('mode',MODES),('input_method',('laser','mouse')),('target_style',TARGET_STYLES)]:
         if isinstance(data.get(key),str) and data[key] in choices:
             values[key] = data[key]
     preset = MODES.get(values['mode'],MODES['classic'])

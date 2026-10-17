@@ -2,6 +2,7 @@
 """Native Linux control panel; workers run in the local virtual environment."""
 import fcntl
 import json
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -35,6 +36,9 @@ class Panel(Gtk.Window):
         self.pending = None
         self.training_input = 'laser'
         self.last_training_mode = 'classic'
+        self.calibration_stage = None
+        self.calibration_dialog = None
+        self.calibration_draft = ROOT/f'.calibration_draft_{time.time_ns()}.json'
         self.state_path = ROOT/f'.camera_status_{time.time_ns()}.json'
         self.log = (ROOT/'aimlab_panel.log').open('a')
         self.settings = load_settings()
@@ -61,7 +65,7 @@ class Panel(Gtk.Window):
         self.fields['color'].append('green','Zielony')
         self.fields['color'].append('red','Czerwony')
         self.fields['color'].set_active_id(self.settings['color'])
-        for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]+[('video-calibration','Kalibracja wideo (Classic)')]),
+        for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]),
                              ('duration', [(str(n),str(n)) for n in (30,60,120)]),
                              ('target_style', [('orange','Pomarańczowy'),('black','Czarny'),('orange-black','Pomarańczowo-czarny'),('classic','Klasyczny — niebieskie koło')]),
                              ('input_method', [('laser','Kamera i laser'),('mouse','Test myszą — bez kamery')])]:
@@ -71,7 +75,7 @@ class Panel(Gtk.Window):
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
-        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Kalibracja wideo (Classic)',self.video_calibration), ('Start treningu',self.train), ('STOP',self.stop)]]:
+        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
             box.pack_start(row, False, False, 0)
             for label, callback in labels:
@@ -83,7 +87,7 @@ class Panel(Gtk.Window):
         self.status = Gtk.Label(xalign=0)
         self.status.set_line_wrap(True)
         box.pack_start(self.status, False, False, 0)
-        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nOdstępy i wiek celu obejmują opóźnienia sprzętu. Gaś laser między strzałami.\nPrzy czerwonym laserze wybierz czarny cel, jeśli pomarańczowy zakłóca detekcję.')
+        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\nPotwierdź wskazane rogi w panelu, aby przejść do tarcz laserowych.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nOdstępy i wiek celu obejmują opóźnienia sprzętu. Gaś laser między strzałami.\nPrzy czerwonym laserze wybierz czarny cel, jeśli pomarańczowy zakłóca detekcję.')
         note.set_line_wrap(True)
         box.pack_start(note, False, False, 0)
         self.refresh()
@@ -126,9 +130,6 @@ class Panel(Gtk.Window):
 
     def mode_changed(self, *_):
         mode = self.fields['mode'].get_active_id()
-        if mode == 'video-calibration':
-            self.message = 'Kalibracja wideo: kliknij STOP, potem Start treningu. Strzelaj w środek tarczy.'
-            return
         if mode:
             self.last_training_mode = mode
             self.fields['radius'].set_value(MODES[mode].radius)
@@ -235,17 +236,87 @@ class Panel(Gtk.Window):
         self.message = 'Laser wyłączony: klikaj środek tarczy w oknie AimLab IRL. Wynik w pikselach rzutnika; N powtarza pomiar.'
 
     def calibrate(self):
-        if self.running('training'):
-            raise RuntimeError('Najpierw kliknij STOP, aby zakończyć trening.')
-        args = self.screen_args()
-        self.start_camera(True)
-        self.spawn('projector','projector_calibration.py',args)
-        self.message = 'Kliknij 4 rogi białej ramki w PODGLĄDZIE KAMERY.'
+        self.screen_args()  # Validate selected output before stopping anything.
+        camera = self.fields['camera'].get_active_id()
+        if not camera or not Path(camera).exists():
+            raise RuntimeError('Podłącz i wybierz kamerę.')
+        self.stop()
+        self.calibration_stage = 'mouse-start'
+        self.message = 'Kalibracja: przygotowuję wskazywanie czterech rogów myszą…'
+
+    def confirm_mouse_calibration(self):
+        self.calibration_stage = 'confirm'
+        dialog = Gtk.MessageDialog(transient_for=self, modal=True,
+                                   message_type=Gtk.MessageType.QUESTION,
+                                   text='Czy potwierdzasz kalibrację myszą?')
+        dialog.format_secondary_text('Sprawdź cztery wskazane rogi w podglądzie kamery. '
+                                     'Po potwierdzeniu uruchomi się etap laserowy. '
+                                     'Możesz też powtórzyć wskazywanie rogów.')
+        dialog.add_buttons('Anuluj',Gtk.ResponseType.CANCEL,
+                           'Powtórz',Gtk.ResponseType.REJECT,
+                           'Potwierdź i przejdź do lasera',Gtk.ResponseType.ACCEPT)
+        dialog.connect('response',self.mouse_calibration_response)
+        self.calibration_dialog = dialog
+        dialog.show_all()
+        dialog.present()
+        self.message = 'Potwierdź kalibrację myszą w oknie dialogowym.'
+
+    def mouse_calibration_response(self, dialog, response):
+        self.calibration_dialog = None
+        dialog.destroy()
+        if response == Gtk.ResponseType.ACCEPT:
+            try:
+                data = json.loads(self.calibration_draft.read_text())
+                if (len(data['points']) != 4 or len(data['frame_size']) != 2
+                        or data['camera'] != self.fields['camera'].get_active_id()):
+                    raise ValueError('Nieprawidłowy szkic kalibracji.')
+                destination = ROOT/'aimlab_calibration.json'
+                if destination.exists():
+                    shutil.copy2(destination,ROOT/'aimlab_calibration.previous.json')
+                temporary = destination.with_suffix('.tmp')
+                temporary.write_text(json.dumps(data),encoding='utf-8')
+                temporary.replace(destination)
+                self.calibration_stage = 'laser-start'
+                self.message = 'Potwierdzono rogi. Przygotowuję kalibrację laserową…'
+            except (OSError,ValueError,KeyError) as error:
+                self.stop()
+                self.message = f'Nie zapisano kalibracji: {error}'
+                return
+        elif response == Gtk.ResponseType.REJECT:
+            self.calibration_stage = 'mouse-start'
+            self.message = 'Powtórz wskazywanie czterech rogów.'
+        else:
+            self.stop()
+            self.message = 'Kalibracja anulowana. Nie zatwierdzono nowych rogów.'
+            return
+        for name in list(self.children):
+            self.stop_one(name)
+
+    def advance_calibration(self, state):
+        stage = self.calibration_stage
+        if stage in ('mouse-start','laser-start') and not self.children and not self.stopping:
+            try:
+                if stage == 'mouse-start':
+                    self.calibration_draft.unlink(missing_ok=True)
+                    self.state_path.unlink(missing_ok=True)
+                    self.start_camera(True,extra_args=['--calibration',str(self.calibration_draft)])
+                    self.spawn('projector','projector_calibration.py',self.screen_args())
+                    self.calibration_stage = 'mouse'
+                    self.message = 'Etap 1/2: wskaż cztery zewnętrzne rogi ramki myszą.'
+                else:
+                    self.video_calibration()
+                    self.calibration_stage = 'laser'
+                    self.message = 'Etap 2/2: strzelaj w środki tarcz. Pudła nie zmieniają celu.'
+            except (OSError,RuntimeError,ValueError) as error:
+                self.stop()
+                self.message = str(error)
+        elif stage == 'mouse' and state.get('calibrated') and self.calibration_draft.exists():
+            self.confirm_mouse_calibration()
+        elif stage in ('mouse','confirm') and (not self.running('camera') or not self.running('projector')):
+            self.stop()
+            self.message = 'Kalibracja przerwana przed potwierdzeniem rogów.'
 
     def train(self):
-        if self.fields['mode'].get_active_id() == 'video-calibration':
-            self.video_calibration()
-            return
         if self.running('training'):
             return
         args = self.screen_args()
@@ -280,6 +351,11 @@ class Panel(Gtk.Window):
             self.stopping[name] = time.monotonic()
 
     def stop(self):
+        self.calibration_stage = None
+        if self.calibration_dialog is not None:
+            dialog,self.calibration_dialog = self.calibration_dialog,None
+            dialog.destroy()
+        self.calibration_draft.unlink(missing_ok=True)
         self.pending = None
         for name in list(self.children):
             self.stop_one(name)
@@ -296,9 +372,9 @@ class Panel(Gtk.Window):
                     self.message = f'Błąd procesu {name}. Szczegóły w aimlab_panel.log.'
                 if name == 'projector' and getattr(self,'video_running',False):
                     self.video_running = False
-                    if self.fields['mode'].get_active_id() == 'video-calibration':
-                        self.fields['mode'].set_active_id(self.last_training_mode)
-                        self.save()
+                    self.calibration_stage = None
+                    self.calibration_draft.unlink(missing_ok=True)
+                    self.save()
                     if not expected:
                         self.message = ('Kalibracja wideo zakończona. Nagranie usunięte. Szczegóły w aimlab_panel.log.' if code == 0 else 'Pomiar wideo odrzucony. Kalibracja zachowana, nagranie usunięte. Szczegóły w aimlab_panel.log.')
                 if name == 'camera':
@@ -310,6 +386,7 @@ class Panel(Gtk.Window):
             elif name in self.stopping and time.monotonic()-self.stopping[name] > 2:
                 process.kill()
         state = self.state()
+        self.advance_calibration(state)
         if self.running('training') and self.training_input != 'mouse' and not state.get('calibrated'):
             self.stop_one('training')
             self.message = 'Trening zatrzymany: brak gotowej kamery lub kalibracji.'
@@ -327,15 +404,13 @@ class Panel(Gtk.Window):
         camera = 'wyłączona' if not self.running('camera') else ('uruchamianie…' if not state else ('gotowa' if state.get('calibrated') else 'wymaga kalibracji'))
         self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message}')
         for widget in self.buttons:
-            widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False))
+            widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False) and not self.calibration_stage)
         for key,field in self.fields.items():
             hardware = key in ('camera','color','minimum','delta')
-            enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False)
+            enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False) and not self.calibration_stage
             if hardware and self.running('camera'):
                 enabled = False
             mode = self.fields['mode'].get_active_id()
-            if mode == 'video-calibration' and key in ('radius','duration','active_targets','targets','target_style','input_method'):
-                enabled = False
             if key == 'duration' and mode == 'classic':
                 enabled = False
             if key == 'targets' and mode != 'classic':

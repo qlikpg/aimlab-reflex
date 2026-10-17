@@ -230,8 +230,11 @@ Punkty oznaczono tarczami w czterech naprzemiennych czarno-białych ćwiartkach.
 
 ### Kalibracja wideo (Classic)
 
-Kliknij STOP, wybierz kamerę i ekran projektora, następnie **Kalibracja wideo
-(Classic)**. Strzelaj laserem dokładnie w środek każdej z 25 tarcz.
+Wybierz kamerę i ekran projektora, następnie kliknij **Kalibracja**.
+Etap 1: wskaż cztery zewnętrzne rogi ramki myszą. W oknie potwierdzenia
+wybierz „Potwierdź i przejdź do lasera”, „Powtórz” lub „Anuluj”.
+Nowe rogi zastąpią poprzednią kalibrację dopiero po potwierdzeniu.
+Etap 2: panel automatycznie zwolni kamerę i uruchomi kalibrację laserową. Strzelaj laserem dokładnie w środek każdej z 25 tarcz.
 Cel pozostaje aż do wykrycia świeżego impulsu wewnątrz środkowej części tarczy widocznej w kamerze. Pudło wyświetla MISS i wymaga ponowienia strzału. Gaś laser między strzałami
 (minimum 150 ms). Początkowe 0,8 s każdego celu jest pomijane dla usunięcia
 starych klatek. Program używa istniejącego detektora i progów panelu. Przed każdym celem mierzy obraz tła i tarczy bez lasera; zgaś laser w tym czasie.
@@ -257,4 +260,4 @@ Pozostają tylko kalibracja, jej poprzednia wersja i tekstowe wyniki pomiaru.
 CLI: `python aimlab_video_calibration.py --camera /dev/video2 --width 1920
 --height 1080 --screen-x 1920 --screen-y 0`.
 
-Po zakończeniu lub przerwaniu kalibracji panel wraca do poprzedniego trybu treningu. Start treningu automatycznie uruchamia kamerę i czeka na wczytanie kalibracji.
+Po zakończeniu lub przerwaniu kalibracji wybrany tryb treningu pozostaje bez zmian. Kalibracja jest jednym procesem z dwoma etapami i jednym przyciskiem. Start treningu automatycznie uruchamia kamerę i czeka na wczytanie kalibracji.

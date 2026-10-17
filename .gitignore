@@ -22,3 +22,5 @@ AimLab_IRL_CHATGPT.txt
 AimLab_IRL_manifest.json
 AimLab_IRL.desktop
 PROJECT_STATE.md
+
+.calibration_draft_*.json

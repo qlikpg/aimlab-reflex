@@ -26,19 +26,44 @@ class PanelTests(unittest.TestCase):
         self.root.stop()
         self.temp.cleanup()
 
-    def test_video_mode_routes_start_to_calibration(self):
-        self.window.fields['mode'].set_active_id('video-calibration')
-        self.window.poll()
-        self.assertFalse(self.window.fields['radius'].get_sensitive())
-        self.window.save()
-        self.assertEqual(panel.load_settings()['mode'],'video-calibration')
-        with patch.object(self.window,'video_calibration') as start:
-            self.window.train()
-            start.assert_called_once()
+    def test_mouse_stage_requires_confirmation(self):
+        self.window.calibration_stage = 'mouse'
+        self.window.calibration_draft.write_text('{}')
+        with patch.object(self.window,'confirm_mouse_calibration') as confirm,patch.object(self.window,'video_calibration') as laser:
+            self.window.advance_calibration({'calibrated':True})
+            confirm.assert_called_once()
+            laser.assert_not_called()
+
+    def test_confirmed_mouse_stage_starts_laser_only_after_process_exit(self):
+        self.window.calibration_stage = 'confirm'
+        camera = self.window.fields['camera'].get_active_id()
+        data = dict(points=[[0,0],[100,0],[100,100],[0,100]],frame_size=[1280,720],camera=camera)
+        self.window.calibration_draft.write_text(json.dumps(data))
+        dialog = Mock()
+        self.window.mouse_calibration_response(dialog,panel.Gtk.ResponseType.ACCEPT)
+        self.assertEqual(self.window.calibration_stage,'laser-start')
+        self.assertTrue((panel.ROOT/'aimlab_calibration.json').exists())
+        with patch.object(self.window,'video_calibration') as laser:
+            self.window.advance_calibration({})
+            laser.assert_called_once()
+        self.assertEqual(self.window.calibration_stage,'laser')
+
+    def test_cancel_does_not_commit_mouse_calibration(self):
+        self.window.calibration_stage = 'confirm'
+        self.window.calibration_draft.write_text('{}')
+        self.window.mouse_calibration_response(Mock(),panel.Gtk.ResponseType.CANCEL)
+        self.assertIsNone(self.window.calibration_stage)
+        self.assertFalse((panel.ROOT/'aimlab_calibration.json').exists())
+        self.assertFalse(self.window.calibration_draft.exists())
+
+    def test_repeat_requires_mouse_stage_again(self):
+        self.window.calibration_stage = 'confirm'
+        self.window.mouse_calibration_response(Mock(),panel.Gtk.ResponseType.REJECT)
+        self.assertEqual(self.window.calibration_stage,'mouse-start')
+        self.assertFalse((panel.ROOT/'aimlab_calibration.json').exists())
 
     def test_video_completion_restores_training(self):
         self.window.fields['mode'].set_active_id('gridshot')
-        self.window.fields['mode'].set_active_id('video-calibration')
         self.window.video_running = True
         process = Mock()
         process.poll.return_value = 0
