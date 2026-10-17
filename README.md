@@ -295,3 +295,25 @@ potwierdza kalibracji. Czas ekspozycji ma jednostkę 0,1 ms (100 = 10 ms).
 Po zmianie ostrości powtórz etap myszy. Wartości są ustawiane w urządzeniu;
 po odłączeniu kamera może przywrócić swoje domyślne parametry.
 Lista kamer wyklucza interfejsy metadanych, które nie udostępniają obrazu.
+
+### Test wykrywania jasności lasera
+
+Kliknij **Test wykrywania lasera**. Panel zwolni poprzednie procesy i otworzy
+kamerę oraz maskę z suwakami progów. W oknie **AimLab IRL** kliknij miejsce,
+w które będziesz świecić (biała ramka), zgaś laser na co najmniej 150 ms,
+a następnie zaświeć. Zobaczysz **WYKRYTO W PUNKCIE** albo **NIE WYKRYTO W PUNKCIE**,
+jasność wybranego kanału 0–255, przewagę nad innymi kanałami, wartości BGR,
+liczbę pikseli maski i licznik impulsów. Detektor pozostaje identyczny jak
+w treningu. Jasny punkt wykryty poza wskazanym polem nie daje potwierdzenia.
+Jest to informacja o decyzji detektora, nie dowód fizycznej obecności lasera;
+wykonaj też próbę z wyłączonym laserem, aby wykluczyć fałszywe wykrycia tła.
+
+Wynik pokazuje przyczynę odrzucenia: jasność, przewaga koloru/prześwietlenie,
+rozmiar plamki albo wybór innego punktu przez detektor. Pomiar jasności dotyczy
+piksela o największej przewadze koloru w wybranym polu, a nie całego obrazu.
+Suwaki w **Laser mask** zmieniają progi na żywo; **Zapisz ustawienia** w panelu
+zachowa je na następne uruchomienie. Ustawienia ekspozycji otworzysz przyciskiem
+**Ustawienia kamery**. Sam test nie zmienia kalibracji ani nie dopisuje strzałów.
+**N** zeruje licznik, kliknięcie zmienia pole, **Q/Esc** lub STOP kończy test.
+CLI kamery: `--laser-test --show-mask`. Panel można uruchomić od razu w teście:
+`python3 aimlab_panel.py --laser-test`.

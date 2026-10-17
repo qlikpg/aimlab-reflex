@@ -13,6 +13,7 @@ import cv2
 import numpy as np
 from aimlab_diagnostics import mask_overlay, CalibrationCheck
 from aimlab_calibration_markers import draw_quarter_target
+from aimlab_laser_test import inspect_detection, DetectionCounter, draw_diagnostic
 
 
 def arguments():
@@ -25,6 +26,7 @@ def arguments():
     p.add_argument('--red-delta', type=int, default=65)
     p.add_argument('--green-min', type=int, default=210)
     p.add_argument('--green-delta', type=int, default=65)
+    p.add_argument('--laser-test', action='store_true', help='Explain detection at a clicked camera point, without recording shots')
     p.add_argument('--show-mask', action='store_true', help='Open laser mask with sensitivity controls')
     p.add_argument('--check-calibration', action='store_true')
     p.add_argument('--projector-width', type=int, default=1920)
@@ -94,6 +96,9 @@ def main():
     last_hit = 'No hits yet'
     check = CalibrationCheck(a.projector_width, a.projector_height) if a.check_calibration else None
     raw_mask = False
+    test_point = None
+    test_report = None
+    test_counter = DetectionCounter()
     if check:
         from aimlab_training import load_background
         background = load_background(Path(__file__).parent/'assets/meadow.png', check.width, check.height)
@@ -111,8 +116,12 @@ def main():
                           lambda value: setattr(a, color + '_delta', value))
 
     def click(event, x, y, flags, userdata):
-        nonlocal matrix, calibrating, points, check_image
+        nonlocal matrix, calibrating, points, check_image, test_point, test_counter
         if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        if a.laser_test:
+            test_point = (x,y)
+            test_counter = DetectionCounter()
             return
         if check and not calibrating:
             if matrix is not None:
@@ -176,7 +185,8 @@ def main():
                         points, matrix, calibrating, armed = [], None, True, False
                 now = time.monotonic()
                 if a.status_file and now - last_status >= .25:
-                    state = {'monotonic_s': now, 'calibrated': matrix is not None and not calibrating,
+                    state = {'monotonic_s': now, 'calibrated': matrix is not None and not calibrating and not a.laser_test,
+                             'laser_test': a.laser_test, 'detection_test': test_report,
                              'calibrating': calibrating, 'camera': a.camera, 'frame_size': shape,
                              'laser_color': a.laser_color,
                              'minimum': getattr(a, a.laser_color + '_min'),
@@ -188,6 +198,10 @@ def main():
                 frames += 1
                 mask, spot = detect(frame, a)
                 overlay = mask_overlay(frame, mask) if show_mask else None
+                if a.laser_test:
+                    test_report = inspect_detection(frame,mask,spot,a,test_point)
+                    test_counter.update(test_report['detected'],now,a.release_ms)
+                    test_report['pulse_count'] = test_counter.count
                 if spot is None:
                     if absent_since is None:
                         absent_since = now
@@ -197,7 +211,7 @@ def main():
                     absent_since = None
                     x, y = spot
                     cv2.circle(frame, (round(x), round(y)), 10, (0, 255, 0), 2)
-                    if armed and matrix is not None and not calibrating:
+                    if armed and matrix is not None and not calibrating and not a.laser_test:
                         u, v = cv2.perspectiveTransform(np.float32([[spot]]), matrix)[0, 0]
                         if 0 <= u <= 1 and 0 <= v <= 1:
                             writer.writerow([datetime.now(timezone.utc).isoformat(), f'{now:.6f}', f'{x:.2f}', f'{y:.2f}', f'{u:.6f}', f'{v:.6f}'])
@@ -217,6 +231,8 @@ def main():
                 if check:
                     cv2.putText(frame, check.summary() if matrix is not None else 'No calibration - close check and calibrate first', (12,110), cv2.FONT_HERSHEY_SIMPLEX, .5, (255,255,255), 1)
                     cv2.imshow('Calibration check', check_image)
+                if a.laser_test:
+                    draw_diagnostic(frame,test_report,test_counter,now)
                 cv2.imshow('AimLab IRL', frame)
                 if show_mask:
                     cv2.putText(overlay, 'B: binary / overlay | magenta: mask', (12,28), cv2.FONT_HERSHEY_SIMPLEX, .6, (255,255,255), 1)
@@ -226,12 +242,14 @@ def main():
                     break
                 if key == ord('b'):
                     raw_mask = not raw_mask
+                elif key == ord('n') and a.laser_test:
+                    test_counter = DetectionCounter()
                 elif key == ord('n') and check:
                     check.samples.clear()
                     check_image = check.draw(background)
-                elif key == ord('c'):
+                elif key == ord('c') and not a.laser_test:
                     points, matrix, calibrating, armed = [], None, True, False
-                elif key == ord('r'):
+                elif key == ord('r') and not a.laser_test:
                     points, matrix, calibrating = [], None, False
                     a.calibration.unlink(missing_ok=True)
                 elif key == ord('m'):

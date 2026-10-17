@@ -3,6 +3,7 @@
 import fcntl
 import json
 import shutil
+import sys
 import subprocess
 import time
 from pathlib import Path
@@ -36,6 +37,7 @@ class Panel(Gtk.Window):
         self.stopping = {}
         self.closing = False
         self.pending = None
+        self.pending_laser_test = False
         self.training_input = 'laser'
         self.last_training_mode = 'classic'
         self.calibration_stage = None
@@ -79,7 +81,7 @@ class Panel(Gtk.Window):
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
-        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save), ('Ustawienia kamery',self.show_camera_controls)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Start treningu',self.train), ('STOP',self.stop)]]:
+        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save), ('Ustawienia kamery',self.show_camera_controls)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Test wykrywania lasera',self.laser_test), ('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
             box.pack_start(row, False, False, 0)
             for label, callback in labels:
@@ -230,6 +232,14 @@ class Panel(Gtk.Window):
         controls.connect('destroy',lambda window:setattr(self,'camera_controls',None))
         controls.show_all()
         controls.present()
+
+    def laser_test(self):
+        camera = self.fields['camera'].get_active_id()
+        if not camera or not is_capture_device(camera):
+            raise RuntimeError('Podłącz i wybierz kamerę z obrazem.')
+        self.stop()
+        self.pending_laser_test = True
+        self.message = 'Przygotowuję test wykrywania lasera…'
 
     def preview(self):
         self.start_camera()
@@ -404,6 +414,7 @@ class Panel(Gtk.Window):
             self.stopping[name] = time.monotonic()
 
     def stop(self):
+        self.pending_laser_test = False
         self.calibration_stage = None
         if self.calibration_dialog is not None:
             dialog,self.calibration_dialog = self.calibration_dialog,None
@@ -437,6 +448,13 @@ class Panel(Gtk.Window):
                         self.pending = None
             elif name in self.stopping and time.monotonic()-self.stopping[name] > 2:
                 process.kill()
+        if self.pending_laser_test and not self.children and not self.stopping:
+            self.pending_laser_test = False
+            try:
+                self.start_camera(extra_args=['--laser-test'])
+                self.message = 'Kliknij miejsce w podglądzie, zaświeć laserem. WYKRYTO/NIE WYKRYTO i pomiary w oknie kamery. Suwaki w Laser mask; Zapisz ustawienia zachowa progi.'
+            except (OSError,RuntimeError,ValueError) as error:
+                self.message = str(error)
         state = self.state()
         self.advance_calibration(state)
         if self.running('training') and self.training_input != 'mouse' and not state.get('calibrated'):
@@ -456,10 +474,10 @@ class Panel(Gtk.Window):
         camera = 'wyłączona' if not self.running('camera') else ('uruchamianie…' if not state else ('gotowa' if state.get('calibrated') else 'wymaga kalibracji'))
         self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message.splitlines()[0] if self.message else ""}')
         for widget in self.buttons:
-            widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False) and not self.calibration_stage)
+            widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False) and not self.calibration_stage and not self.pending_laser_test)
         for key,field in self.fields.items():
             hardware = key in ('camera','color','minimum','delta')
-            enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False) and not self.calibration_stage
+            enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False) and not self.calibration_stage and not self.pending_laser_test
             if hardware and self.running('camera'):
                 enabled = False
             mode = self.fields['mode'].get_active_id()
@@ -495,6 +513,8 @@ def main():
             return
         window = Panel()
         window.show_all()
+        if '--laser-test' in sys.argv:
+            window.action(None,window.laser_test)
         Gtk.main()
 
 

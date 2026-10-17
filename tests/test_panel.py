@@ -107,6 +107,23 @@ class PanelTests(unittest.TestCase):
         self.assertIs(self.window.calibration_dialog,dialog)
         self.window.calibration_dialog = None
 
+    def test_laser_test_starts_only_after_previous_workers_exit(self):
+        camera = self.window.fields['camera'].get_active_id()
+        if camera is None:
+            self.skipTest('No camera choice available')
+        process = Mock()
+        process.poll.return_value = None
+        self.window.children['camera'] = process
+        with patch.object(panel,'is_capture_device',return_value=True),patch.object(self.window,'start_camera') as start:
+            self.window.laser_test()
+            self.window.poll()
+            start.assert_not_called()
+            self.assertTrue(self.window.pending_laser_test)
+            process.poll.return_value = 0
+            self.window.poll()
+            start.assert_called_once_with(extra_args=['--laser-test'])
+            self.assertFalse(self.window.pending_laser_test)
+
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)
