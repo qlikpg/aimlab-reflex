@@ -124,6 +124,25 @@ class PanelTests(unittest.TestCase):
             start.assert_called_once_with(extra_args=['--laser-test'])
             self.assertFalse(self.window.pending_laser_test)
 
+    def test_background_selection_is_saved_and_sent_to_training(self):
+        self.window.fields['input_method'].set_active_id('mouse')
+        for style in ('black','white','meadow'):
+            self.window.fields['background_style'].set_active_id(style)
+            with patch.object(self.window,'spawn') as spawn:
+                self.window.train()
+                self.window.poll()
+                args = spawn.call_args.args[2]
+                self.assertEqual(args[args.index('--background-style')+1],style)
+            self.assertEqual(panel.load_settings()['background_style'],style)
+
+    def test_test_background_changes_without_restarting_camera(self):
+        state = dict(laser_test=True,calibrated=False,minimum=180,delta=45,laser_color='green')
+        with patch.object(self.window,'state',return_value=state),patch.object(self.window,'stop_one') as stop,patch.object(self.window,'start_camera') as start:
+            self.window.fields['background_style'].set_active_id('white')
+            stop.assert_called_once_with('background')
+            start.assert_not_called()
+            self.assertIn('white',self.window.pending_test_background)
+
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)

@@ -13,7 +13,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from aimlab_calibration_markers import draw_quarter_target
-from aimlab_training import load_background
+from aimlab_training import make_background
 from aimlab_irl_camera_mvp import detect
 
 
@@ -141,6 +141,7 @@ class PulseGate:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--background-style',choices=('meadow','black','white'),default='meadow')
     p.add_argument('--camera',required=True)
     p.add_argument('--report-file',type=Path,default=Path('aimlab_calibration_report.json'))
     p.add_argument('--width',type=int,default=1920)
@@ -184,7 +185,7 @@ def main():
                 raise ValueError('Nie można uruchomić nagrania MJPG.')
             recording_fd = os.open(path,os.O_RDONLY)
             os.unlink(path)  # Anonymous inode: even SIGKILL cannot leave a video behind.
-            base = load_background(Path(__file__).parent/'assets/meadow.png',a.width,a.height)
+            base = make_background(a.background_style,Path(__file__).parent/'assets/meadow.png',a.width,a.height)
             refs = [(round(u*(a.width-1)),round(v*(a.height-1)))
                     for v in (.1,.3,.5,.7,.9) for u in (.1,.3,.5,.7,.9)]
             cv2.namedWindow(name,cv2.WINDOW_NORMAL)

@@ -36,6 +36,12 @@ def load_background(path, width, height):
     return resized[y:y+height, x:x+width].copy()
 
 
+def make_background(style, path, width, height):
+    if style in ('black','white'):
+        return np.full((height,width,3),0 if style == 'black' else 255,dtype=np.uint8)
+    return load_background(path,width,height)
+
+
 def draw_target(image, target, radius):
     # Compatibility wrapper for the original circular renderer.
     draw_classic(image,Target(0,target[0],target[1],radius))
@@ -183,6 +189,7 @@ def arguments():
     p.add_argument('--no-hit-sound', action='store_true', help='Disable the hit bell')
     p.add_argument('--mouse-test',action='store_true')
     p.add_argument('--background',type=Path,default=DEFAULT_BACKGROUND)
+    p.add_argument('--background-style',choices=('meadow','black','white'),default='meadow')
     p.add_argument('--plain-background',action='store_true')
     a = p.parse_args()
     try:
@@ -246,7 +253,7 @@ def main():
     config = config_from_args(a)
     try:
         base = (np.full((a.height,a.width,3),20,dtype=np.uint8) if a.plain_background
-                else load_background(a.background,a.width,a.height))
+                else make_background(a.background_style,a.background,a.width,a.height))
     except ValueError as error:
         raise SystemExit(str(error)) from error
     scale = min(a.width/1920,a.height/1080)

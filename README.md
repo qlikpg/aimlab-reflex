@@ -319,3 +319,18 @@ CLI kamery: `--laser-test --show-mask`. Panel można uruchomić od razu w teści
 `python3 aimlab_panel.py --laser-test`.
 
 Podczas kalibracji i startu treningu maska nie otwiera się automatycznie. Jest domyślnie włączana tylko przez „Podgląd i maska” oraz „Test wykrywania lasera”. W oknie kamery klawisz M przełącza maskę ręcznie.
+
+### Tło: łąka / całe czarne / całe białe
+
+W panelu wybierz **Tło**. Wybór jest zapisywany w ustawieniach i używany w treningu,
+etapie laserowym kalibracji oraz pomiarze błędu. Kalibracja rogów zachowuje swoją
+ramkę. Starsze ustawienia domyślnie wybierają łąkę. CLI: `--background-style
+meadow|black|white`; dotychczasowe `--background` i `--plain-background` działają nadal.
+
+W **Teście wykrywania lasera** wybrane tło jest wyświetlane na wybranym ekranie
+projektora, bez napisów i tarcz. Możesz przełączać tło w panelu na żywo: restartuje
+się tylko plansza, kamera, progi i wybrane pole pomiaru pozostają bez zmian.
+Porównaj tę samą pozycję i laser na czarnym oraz białym tle. Przy ręcznej ekspozycji
+porównanie będzie mniej zależne od automatycznych zmian jasności kamery. Patrz
+zarówno na jasność plamki, jak i przewagę koloru: jasna, prześwietlona do bieli
+plamka może nie spełniać progu koloru. STOP zamyka kamerę i planszę testową.

@@ -38,6 +38,7 @@ class Panel(Gtk.Window):
         self.closing = False
         self.pending = None
         self.pending_laser_test = False
+        self.pending_test_background = None
         self.training_input = 'laser'
         self.last_training_mode = 'classic'
         self.calibration_stage = None
@@ -57,8 +58,8 @@ class Panel(Gtk.Window):
         grid = Gtk.Grid(column_spacing=18, row_spacing=10)
         box.pack_start(grid, False, False, 0)
         self.fields = {}
-        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
-            if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method', 'target_style'):
+        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('background_style','Tło'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
+            if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method', 'target_style', 'background_style'):
                 field = Gtk.ComboBoxText()
             else:
                 low, high = (1,100) if key == 'targets' else ((1,24) if key == 'active_targets' else ((5,300) if key == 'radius' else (0,255)))
@@ -73,11 +74,13 @@ class Panel(Gtk.Window):
         self.fields['color'].set_active_id(self.settings['color'])
         for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]),
                              ('duration', [(str(n),str(n)) for n in (30,60,120)]),
+                             ('background_style',[('meadow','Łąka'),('black','Całe czarne'),('white','Całe białe')]),
                              ('target_style', [('orange','Pomarańczowy'),('black','Czarny'),('orange-black','Pomarańczowo-czarny'),('classic','Klasyczny — niebieskie koło')]),
                              ('input_method', [('laser','Kamera i laser'),('mouse','Test myszą — bez kamery')])]:
             for value,label in choices:
                 self.fields[key].append(value,label)
             self.fields[key].set_active_id(str(self.settings[key]))
+        self.fields['background_style'].connect('changed',self.background_changed)
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
@@ -162,7 +165,7 @@ class Panel(Gtk.Window):
         for key, field in self.fields.items():
             if key != 'screen':
                 a[key] = (int(field.get_active_id()) if key == 'duration' else
-                          field.get_active_id() if key in ('camera','color','mode','input_method','target_style') else field.get_value_as_int())
+                          field.get_active_id() if key in ('camera','color','mode','input_method','target_style','background_style') else field.get_value_as_int())
         if not a['camera']:
             a['camera'] = self.settings['camera']
         state = self.state()
@@ -235,7 +238,19 @@ class Panel(Gtk.Window):
         controls.show_all()
         controls.present()
 
+    def background_changed(self, *_):
+        if self.state().get('laser_test'):
+            try:
+                args = self.screen_args()+['--background-style',self.fields['background_style'].get_active_id()]
+                self.save()
+                self.stop_one('background')
+                self.pending_test_background = args
+                self.message = 'Zmieniam tło testowe na projektorze. Kamera i progi pozostają bez zmian.'
+            except (OSError,RuntimeError,ValueError) as error:
+                self.message = str(error)
+
     def laser_test(self):
+        self.screen_args()
         camera = self.fields['camera'].get_active_id()
         if not camera or not is_capture_device(camera):
             raise RuntimeError('Podłącz i wybierz kamerę z obrazem.')
@@ -257,7 +272,7 @@ class Panel(Gtk.Window):
         self.save()
         a = self.settings
         self.calibration_report.unlink(missing_ok=True)
-        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,'--report-file',str(self.calibration_report),*args,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta'])])
+        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,'--report-file',str(self.calibration_report),*args,'--background-style',a['background_style'],'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta'])])
         self.video_running = True
         self.message = 'Kalibracja wideo: strzelaj w środek tarczy. Następny cel po impulsie. Gaś laser między strzałami; nie ruszaj kamerą. Nagranie zostanie usunięte; wynik w aimlab_panel.log.'
 
@@ -286,7 +301,7 @@ class Panel(Gtk.Window):
     def check_calibration(self):
         if any(self.running(name) for name in ('camera','training','projector')):
             raise RuntimeError('Kliknij STOP przed pomiarem błędu.')
-        args = self.screen_args()
+        args = self.screen_args()+['--background-style',self.fields['background_style'].get_active_id()]
         args[0] = '--projector-width'
         args[2] = '--projector-height'
         self.start_camera(extra_args=['--check-calibration', *args])
@@ -404,7 +419,7 @@ class Panel(Gtk.Window):
         self.save()
         self.stop_one('projector')
         self.training_input = 'mouse' if mouse else 'laser'
-        self.pending = args+['--mode',mode,'--target-style',self.fields['target_style'].get_active_id(),'--duration',str(duration),'--active-targets',str(count),
+        self.pending = args+['--mode',mode,'--target-style',self.fields['target_style'].get_active_id(),'--background-style',self.fields['background_style'].get_active_id(),'--duration',str(duration),'--active-targets',str(count),
                              '--targets',str(self.fields['targets'].get_value_as_int()),'--radius',str(radius)]
         if mouse:
             self.pending.append('--mouse-test')
@@ -416,6 +431,7 @@ class Panel(Gtk.Window):
             self.stopping[name] = time.monotonic()
 
     def stop(self):
+        self.pending_test_background = None
         self.pending_laser_test = False
         self.calibration_stage = None
         if self.calibration_dialog is not None:
@@ -443,6 +459,8 @@ class Panel(Gtk.Window):
                     self.save()
                     self.show_calibration_report(code,expected)
                 if name == 'camera':
+                    self.pending_test_background = None
+                    self.stop_one('background')
                     if self.training_input != 'mouse':
                         self.stop_one('training')
                     self.stop_one('projector')
@@ -454,9 +472,16 @@ class Panel(Gtk.Window):
             self.pending_laser_test = False
             try:
                 self.start_camera(extra_args=['--laser-test'])
+                self.pending_test_background = self.screen_args()+['--background-style',self.fields['background_style'].get_active_id()]
                 self.message = 'Kliknij miejsce w podglądzie, zaświeć laserem. WYKRYTO/NIE WYKRYTO i pomiary w oknie kamery. Suwaki w Laser mask; Zapisz ustawienia zachowa progi.'
             except (OSError,RuntimeError,ValueError) as error:
                 self.message = str(error)
+        if self.pending_test_background and self.running('camera') and not self.running('background') and 'background' not in self.stopping:
+            try:
+                self.spawn('background','aimlab_test_background.py',self.pending_test_background)
+            except (OSError,RuntimeError) as error:
+                self.message = str(error)
+            self.pending_test_background = None
         state = self.state()
         self.advance_calibration(state)
         if self.running('training') and self.training_input != 'mouse' and not state.get('calibrated'):

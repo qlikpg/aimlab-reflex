@@ -26,6 +26,7 @@ def arguments():
     p.add_argument('--red-delta', type=int, default=65)
     p.add_argument('--green-min', type=int, default=210)
     p.add_argument('--green-delta', type=int, default=65)
+    p.add_argument('--background-style',choices=('meadow','black','white'),default='meadow')
     p.add_argument('--laser-test', action='store_true', help='Explain detection at a clicked camera point, without recording shots')
     p.add_argument('--show-mask', action='store_true', help='Open laser mask with sensitivity controls')
     p.add_argument('--check-calibration', action='store_true')
@@ -100,8 +101,8 @@ def main():
     test_report = None
     test_counter = DetectionCounter()
     if check:
-        from aimlab_training import load_background
-        background = load_background(Path(__file__).parent/'assets/meadow.png', check.width, check.height)
+        from aimlab_training import make_background
+        background = make_background(a.background_style,Path(__file__).parent/'assets/meadow.png', check.width, check.height)
         cv2.namedWindow('Calibration check', cv2.WINDOW_NORMAL)
         cv2.moveWindow('Calibration check', a.screen_x, a.screen_y)
         cv2.setWindowProperty('Calibration check', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
