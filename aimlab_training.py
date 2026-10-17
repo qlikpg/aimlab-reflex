@@ -15,6 +15,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from aimlab_sound import HitSound
 from aimlab_game_modes import Config, Game, MODES, Target
 from aimlab_target_styles import TargetAppearance, STYLES, draw_classic
 
@@ -179,6 +180,7 @@ def arguments():
     p.add_argument('--target-style',choices=tuple(STYLES),default='orange')
     p.add_argument('--duration',type=float,default=60)
     p.add_argument('--active-targets',type=int,default=None)
+    p.add_argument('--no-hit-sound', action='store_true', help='Disable the hit bell')
     p.add_argument('--mouse-test',action='store_true')
     p.add_argument('--background',type=Path,default=DEFAULT_BACKGROUND)
     p.add_argument('--plain-background',action='store_true')
@@ -275,6 +277,7 @@ def main():
     if a.mouse_test:
         cv2.setMouseCallback(name,mouse.callback)
     print(f'{game.mode.name} started. Input: {"mouse" if a.mouse_test else "laser"}. Results: {output}',flush=True)
+    sound = HitSound(enabled=not a.no_hit_sound)
     try:
         while True:
             frame_start = time.monotonic()
@@ -296,6 +299,8 @@ def main():
                 shot = game.fire(stamp,u,v,time.monotonic(),source='mouse' if a.mouse_test else 'laser')
                 if shot:
                     results.write(game,ordinal,session_id,time.monotonic(),shot)
+                    if shot.result == 'hit':
+                        sound.play()
                     feedback = 'HIT' if shot.result == 'hit' else 'MISS'
                     feedback_until = frame_start+.5
             now = time.monotonic()
@@ -328,6 +333,7 @@ def main():
         if game.started_at is not None and not summary_written:
             game.finish(time.monotonic())
             results.write(game,ordinal,session_id,time.monotonic(),reason='stopped')
+        sound.close()
         results.close()
         if reader:
             reader.close()

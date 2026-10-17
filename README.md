@@ -279,3 +279,7 @@ poprzedniej kalibracji zastosowane przesunięcie wynosi zero. Korekta perspektyw
 może różnić się w poszczególnych częściach obrazu. Przy odrzuceniu etapu laserowego
 pozostaje wcześniej potwierdzona kalibracja myszy. Raport potwierdza również
 zwolnienie nagrania z pamięci.
+
+### Dźwięk trafienia
+
+Wszystkie tryby treningowe odtwarzają krótki dzwoneczek po zaliczonym trafieniu, także w teście myszą. Pudło nie wydaje dźwięku. Odtwarzanie działa w tle przez systemowe `paplay` lub `aplay`; brak odtwarzacza nie przerywa treningu. Dźwięk jest generowany raz przy starcie, bez dodatkowych bibliotek. CLI `--no-hit-sound` wycisza dzwoneczek. Głośność ustawisz systemowym suwakiem dźwięku.

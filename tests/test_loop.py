@@ -20,6 +20,7 @@ class LoopTests(unittest.TestCase):
                 callback=[]
                 restarts=[0]
                 frames=[0]
+                missed=[False]
                 def factory(config, **kwargs):
                     game=Game(config, **kwargs)
                     games.append(game)
@@ -36,12 +37,17 @@ class LoopTests(unittest.TestCase):
                     if game.state=='running' and game.targets:
                         target=game.targets[0]
                         if target.activated_at is not None:
-                            callback[0](cv2.EVENT_LBUTTONDOWN,round(target.x),round(target.y),0,None)
+                            if not missed[0]:
+                                callback[0](cv2.EVENT_LBUTTONDOWN,0,0,0,None)
+                                missed[0]=True
+                            else:
+                                callback[0](cv2.EVENT_LBUTTONDOWN,round(target.x),round(target.y),0,None)
                     clock[0]+=1 if game.state=='idle' else .05
                     return -1
                 args=['aimlab_training.py','--mode',mode,'--mouse-test','--duration','.5','--targets','2',
                       '--width','960','--height','540','--hits',str(Path(directory)/'no_camera_needed.csv')]
                 with patch.object(training.sys,'argv',args),patch.object(training,'Game',side_effect=factory), \
+                     patch.object(training,'HitSound') as sound, \
                      patch.object(training.time,'monotonic',side_effect=lambda:clock[0]), \
                      patch.object(cv2,'namedWindow'),patch.object(cv2,'moveWindow'), \
                      patch.object(cv2,'setWindowProperty'),patch.object(cv2,'imshow'), \
@@ -49,6 +55,8 @@ class LoopTests(unittest.TestCase):
                      patch.object(cv2,'setMouseCallback',side_effect=lambda name,fn:callback.append(fn)), \
                      patch.object(cv2,'waitKey',side_effect=wait_key),contextlib.redirect_stdout(io.StringIO()):
                     training.main()
+                self.assertTrue(sound.return_value.play.called)
+                sound.return_value.close.assert_called_once()
                 result=next(Path(directory).glob('aimlab_training_*.csv'))
                 with result.open() as stream:
                     rows=list(csv.DictReader(stream))
@@ -58,6 +66,8 @@ class LoopTests(unittest.TestCase):
                 self.assertEqual(len({r['session_id'] for r in summaries}),2)
                 self.assertTrue(all(r['result']=='finished' for r in summaries))
                 self.assertTrue(shots)
+                self.assertEqual(sound.return_value.play.call_count,sum(row['result']=='hit' for row in shots))
+                self.assertTrue(any(row['result']=='miss' for row in shots))
                 self.assertTrue(all(r['source']=='mouse' for r in shots))
                 self.assertTrue(all(int(r['hits'])>0 for r in summaries))
                 if mode=='classic':
