@@ -204,11 +204,11 @@ Klawisz **B** przełącza ten widok na dotychczasową maskę binarną. Suwaki
 progów działają jak wcześniej. Podgląd nie zmienia detektora ani kalibracji.
 
 Po zapisanej kalibracji kliknij **STOP**, następnie **Pomiar błędu**.
-Na wybranym ekranie pojawi się tło łąki z białym krzyżykiem. Wyłącz laser
-i kliknij dokładnie środek tego krzyżyka w oknie kamery **AimLab IRL**.
-Powtórz dla dziewięciu kolejnych punktów. Nie klikaj obrazu na projektorze.
+Na wybranym ekranie pojawi się tło łąki z czarno-białą tarczą podzieloną na cztery części. Wyłącz laser
+i kliknij dokładnie środek tej tarczy w oknie kamery **AimLab IRL**.
+Powtórz dla 25 punktów siatki 5×5 (od 5% do 95% szerokości i wysokości). Nie klikaj obrazu na projektorze.
 Program przelicza kliknięcie istniejącą homografią i porównuje je ze znaną
-pozycją krzyżyka. Wyniki są w pikselach wybranego ekranu projektora:
+pozycją środka tarczy. Wyniki są w pikselach wybranego ekranu projektora:
 
 - `dx_px`, `dy_px`: pozycja wyliczona minus rzeczywista pozycja krzyżyka;
   dodatnie wartości oznaczają przesunięcie w prawo / w dół.
@@ -220,8 +220,38 @@ Wynik obejmuje dokładność wskazania myszą i obrazowania kamery. To pomiar
 niezależnych punktów kontrolnych, bez automatycznej korekty kalibracji.
 **N** zaczyna nową serię; **Q/Esc** lub STOP kończy pomiar. Próbki z czasem UTC
 są dopisywane do `aimlab_calibration_check.csv` (osobno od zdarzeń lasera).
-Po dziewiątej próbce podsumowanie pozostaje w oknie kamery.
+Po 25. próbce podsumowanie pozostaje w oknie kamery.
 
 CLI kamery: `--check-calibration --projector-width 1920 --projector-height 1080
 --screen-x 1920 --screen-y 0 --show-mask` wraz z dotychczasowymi argumentami
 kamery i progów. Wymiary odnoszą się do aktualnego trybu wyświetlania.
+
+Punkty oznaczono tarczami w czterech naprzemiennych czarno-białych ćwiartkach. W pomiarze błędu klikaj środek tarczy. Podstawowa kalibracja nadal wymaga czterech zewnętrznych rogów białej ramki (LG → PG → PD → LD).
+
+### Kalibracja wideo (Classic)
+
+Kliknij STOP, wybierz kamerę i ekran projektora, następnie **Kalibracja wideo
+(Classic)**. Wyłącz laser, unieruchom kamerę i zachowaj stałe oświetlenie.
+Tryb wyświetla pojedyncze nieruchome tarcze na tle łąki, podobnie jak Classic,
+lecz przesuwa je automatycznie — nie strzelaj. 25 pozycji zajmuje około 50 s.
+Program nagrywa po trzy klatki przed i po wyświetleniu każdej tarczy,
+analizuje różnicę obrazów i dopasowuje istniejącą homografię. Nie zmienia
+formatu impulsów ani detektora lasera.
+
+20 punktów służy dopasowaniu (RANSAC, minimum 18 zgodnych), pięć osobnych
+punktów na przekątnej służy kontroli. Korekta wymaga RMS ≤8 px i maksymalnego
+błędu ≤15 px na punktach kontrolnych, w pikselach aktualnego ekranu.
+Jeżeli wcześniejsza kalibracja tej samej kamery i rozdzielczości ma mniejszy
+lub równy błąd kontrolny, pozostaje zachowana. Poprzedni plik jest kopiowany
+do `aimlab_calibration.previous.json`; nowy zachowuje dotychczasowy format
+czterech rogów i zapisuje dodatkowo błędy kontroli. To metoda eksperymentalna:
+ruch kamery, ekspozycja automatyczna i słaba widoczność mogą uniemożliwić
+pomiar. Po korekcie sprawdź dokładność przyciskiem „Pomiar błędu”.
+
+Nagranie MJPG znajduje się wyłącznie w RAM (`/dev/shm`, wymagane 100 MB wolne).
+Plik jest usuwany z katalogu natychmiast po otwarciu i istnieje tylko przez
+otwarty deskryptor do zakończenia analizy. Jest zwalniany po sukcesie, błędzie,
+STOP/Q/Esc, a także po zabiciu procesu. Nie archiwizujemy ani nie wysyłamy wideo.
+Pozostają tylko kalibracja, jej poprzednia wersja i tekstowe wyniki pomiaru.
+CLI: `python aimlab_video_calibration.py --camera /dev/video2 --width 1920
+--height 1080 --screen-x 1920 --screen-y 0`.

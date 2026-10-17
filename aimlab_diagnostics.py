@@ -1,6 +1,7 @@
 """Camera mask overlay and independent projector reference measurements."""
 import cv2
 import numpy as np
+from aimlab_calibration_markers import draw_quarter_target
 
 
 def mask_overlay(frame, mask):
@@ -15,7 +16,8 @@ class CalibrationCheck:
     def __init__(self, width, height):
         self.width, self.height = width, height
         self.references = [(round(u * (width-1)), round(v * (height-1)))
-                           for v in (.15, .5, .85) for u in (.15, .5, .85)]
+                           for v in (.05, .275, .5, .725, .95)
+                           for u in (.05, .275, .5, .725, .95)]
         self.samples = []
 
     @property
@@ -35,18 +37,17 @@ class CalibrationCheck:
 
     def summary(self):
         if not self.samples:
-            return 'Click the projected cross in CAMERA view (laser off)'
+            return 'Click target center in CAMERA view (laser off)'
         errors = np.array([s[-1] for s in self.samples])
         last = self.samples[-1]
-        return (f'{len(errors)}/9 dx={last[-3]:+.1f} dy={last[-2]:+.1f}px | '
+        return (f'{len(errors)}/{len(self.references)} dx={last[-3]:+.1f} dy={last[-2]:+.1f}px | '
                 f'RMS={np.sqrt(np.mean(errors**2)):.1f}px max={errors.max():.1f}px')
 
     def draw(self, background):
         result = background.copy()
         if self.reference is not None:
             x, y = self.reference
-            cv2.drawMarker(result, (x,y), (0,0,0), cv2.MARKER_CROSS, 46, 7)
-            cv2.drawMarker(result, (x,y), (255,255,255), cv2.MARKER_CROSS, 42, 2)
-        cv2.putText(result, f'Calibration check {min(len(self.samples)+1,9)}/9',
-                    (25,45), cv2.FONT_HERSHEY_SIMPLEX, .8, (255,255,255), 2)
+            draw_quarter_target(result, (x,y))
+        cv2.putText(result, f'Calibration check {min(len(self.samples)+1,len(self.references))}/{len(self.references)}',
+                    (25,round(self.height*.16)), cv2.FONT_HERSHEY_SIMPLEX, .6, (255,255,255), 2)
         return result

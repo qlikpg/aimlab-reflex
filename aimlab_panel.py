@@ -70,7 +70,7 @@ class Panel(Gtk.Window):
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
-        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration), ('Start treningu',self.train), ('STOP',self.stop)]]:
+        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration), ('Kalibracja wideo (Classic)',self.video_calibration), ('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
             box.pack_start(row, False, False, 0)
             for label, callback in labels:
@@ -207,6 +207,17 @@ class Panel(Gtk.Window):
         self.start_camera()
         self.message = 'Podgląd uruchomiony. Maska ma suwaki czułości.'
 
+    def video_calibration(self):
+        if any(self.running(name) for name in ('camera','training','projector')):
+            raise RuntimeError('Kliknij STOP przed kalibracją wideo.')
+        camera = self.fields['camera'].get_active_id()
+        if not camera or not Path(camera).exists():
+            raise RuntimeError('Podłącz i wybierz kamerę.')
+        args = self.screen_args()
+        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,*args])
+        self.video_running = True
+        self.message = 'Kalibracja wideo: wyłącz laser, nie ruszaj kamerą. 25 pojedynczych tarcz, około 50 s. Nagranie zostanie usunięte; wynik w aimlab_panel.log.'
+
     def check_calibration(self):
         if any(self.running(name) for name in ('camera','training','projector')):
             raise RuntimeError('Kliknij STOP przed pomiarem błędu.')
@@ -214,7 +225,7 @@ class Panel(Gtk.Window):
         args[0] = '--projector-width'
         args[2] = '--projector-height'
         self.start_camera(extra_args=['--check-calibration', *args])
-        self.message = 'Laser wyłączony: klikaj środek białego krzyżyka w oknie AimLab IRL. Wynik w pikselach rzutnika; N powtarza pomiar.'
+        self.message = 'Laser wyłączony: klikaj środek tarczy w oknie AimLab IRL. Wynik w pikselach rzutnika; N powtarza pomiar.'
 
     def calibrate(self):
         if self.running('training'):
@@ -270,6 +281,10 @@ class Panel(Gtk.Window):
                 del self.children[name]
                 if code and not expected:
                     self.message = f'Błąd procesu {name}. Szczegóły w aimlab_panel.log.'
+                if name == 'projector' and getattr(self,'video_running',False):
+                    self.video_running = False
+                    if not expected:
+                        self.message = ('Kalibracja wideo zakończona. Nagranie usunięte. Szczegóły w aimlab_panel.log.' if code == 0 else 'Pomiar wideo odrzucony. Kalibracja zachowana, nagranie usunięte. Szczegóły w aimlab_panel.log.')
                 if name == 'camera':
                     if self.training_input != 'mouse':
                         self.stop_one('training')
@@ -293,10 +308,10 @@ class Panel(Gtk.Window):
         camera = 'wyłączona' if not self.running('camera') else ('uruchamianie…' if not state else ('gotowa' if state.get('calibrated') else 'wymaga kalibracji'))
         self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message}')
         for widget in self.buttons:
-            widget.set_sensitive(not self.stopping and not self.pending)
+            widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False))
         for key,field in self.fields.items():
             hardware = key in ('camera','color','minimum','delta')
-            enabled = not self.stopping and not self.pending and not self.running('training')
+            enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False)
             if hardware and self.running('camera'):
                 enabled = False
             mode = self.fields['mode'].get_active_id()

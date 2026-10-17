@@ -28,12 +28,12 @@ class DiagnosticsTests(unittest.TestCase):
         while check.reference is not None:
             check.record(matrix,check.reference)
         self.assertIsNone(check.record(matrix,(0,0)))
-        self.assertEqual(len(check.samples),9)
+        self.assertEqual(len(check.samples),25)
         check.samples.clear()
-        self.assertEqual(check.reference,(150,75))
+        self.assertEqual(check.reference,(50,25))
 
     def test_reference_matches_rendered_center(self):
         check = CalibrationCheck(1001,501)
         result = check.draw(np.zeros((501,1001,3),np.uint8))
         x,y = check.reference
-        self.assertTrue((result[y,x] == 255).all())
+        self.assertTrue((result[y,x] == 0).all())

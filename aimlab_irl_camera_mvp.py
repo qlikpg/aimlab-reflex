@@ -12,6 +12,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 from aimlab_diagnostics import mask_overlay, CalibrationCheck
+from aimlab_calibration_markers import draw_quarter_target
 
 
 def arguments():
@@ -207,7 +208,7 @@ def main():
                 if points:
                     cv2.polylines(frame, [np.int32(points)], len(points) == 4, (255, 180, 0), 2)
                     for i, point in enumerate(points):
-                        cv2.putText(frame, str(i + 1), tuple(point), cv2.FONT_HERSHEY_SIMPLEX, .7, (255, 180, 0), 2)
+                        draw_quarter_target(frame, point, 12)
                 status = f'Click corner {len(points)+1}: TL TR BR BL' if calibrating else ('Calibrated' if matrix is not None else 'Press C to calibrate')
                 status += f' | Laser: {a.laser_color}'
                 status += f' | min={getattr(a, a.laser_color + "_min")} delta={getattr(a, a.laser_color + "_delta")}'
