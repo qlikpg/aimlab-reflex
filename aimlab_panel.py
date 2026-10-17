@@ -10,36 +10,30 @@ gi.require_version('Gtk', '3.0')
 gi.require_version('Gdk', '3.0')
 from gi.repository import Gdk, GLib, Gtk
 
+from aimlab_game_modes import Config, Game, MODES
+from aimlab_settings import DEFAULTS, migrate_settings
+
 ROOT = Path(__file__).resolve().parent
-DEFAULTS = {'camera': '/dev/video2', 'color': 'green', 'minimum': 180, 'delta': 45, 'targets': 10, 'radius': 70}
 
 
 def load_settings():
-    values = dict(DEFAULTS)
     try:
-        data = json.loads((ROOT/'aimlab_settings.json').read_text())
-        if isinstance(data.get('camera'), str):
-            values['camera'] = data['camera']
-        if data.get('color') in ('green', 'red'):
-            values['color'] = data['color']
-        for key, low, high in [('minimum',0,255), ('delta',0,255), ('targets',1,100), ('radius',10,200)]:
-            if type(data.get(key)) is int and low <= data[key] <= high:
-                values[key] = data[key]
-    except (OSError, ValueError, AttributeError, TypeError):
-        pass
-    return values
+        return migrate_settings(json.loads((ROOT/'aimlab_settings.json').read_text()))
+    except (OSError, ValueError):
+        return dict(DEFAULTS)
 
 
 class Panel(Gtk.Window):
     def __init__(self):
         super().__init__(title='AimLab IRL — panel treningu')
-        self.set_default_size(720, 620)
+        self.set_default_size(860, 840)
         self.set_border_width(24)
         self.connect('delete-event', self.close)
         self.children = {}
         self.stopping = {}
         self.closing = False
         self.pending = None
+        self.training_input = 'laser'
         self.state_path = ROOT/f'.camera_status_{time.time_ns()}.json'
         self.log = (ROOT/'aimlab_panel.log').open('a')
         self.settings = load_settings()
@@ -52,11 +46,11 @@ class Panel(Gtk.Window):
         grid = Gtk.Grid(column_spacing=18, row_spacing=10)
         box.pack_start(grid, False, False, 0)
         self.fields = {}
-        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('targets','Cele w sesji'), ('radius','Promień celu (piksele)')]):
-            if key in ('camera', 'screen', 'color'):
+        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
+            if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method'):
                 field = Gtk.ComboBoxText()
             else:
-                low, high = (1,100) if key == 'targets' else ((10,200) if key == 'radius' else (0,255))
+                low, high = (1,100) if key == 'targets' else ((1,24) if key == 'active_targets' else ((5,300) if key == 'radius' else (0,255)))
                 field = Gtk.SpinButton.new_with_range(low, high, 1)
                 field.set_value(self.settings[key])
             field.set_hexpand(True)
@@ -66,6 +60,14 @@ class Panel(Gtk.Window):
         self.fields['color'].append('green','Zielony')
         self.fields['color'].append('red','Czerwony')
         self.fields['color'].set_active_id(self.settings['color'])
+        for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]),
+                             ('duration', [(str(n),str(n)) for n in (30,60,120)]),
+                             ('input_method', [('laser','Kamera i laser'),('mouse','Test myszą — bez kamery')])]:
+            for value,label in choices:
+                self.fields[key].append(value,label)
+            self.fields[key].set_active_id(str(self.settings[key]))
+        self.fields['mode'].connect('changed',self.mode_changed)
+        self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
         for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
@@ -79,11 +81,11 @@ class Panel(Gtk.Window):
         self.status = Gtk.Label(xalign=0)
         self.status.set_line_wrap(True)
         box.pack_start(self.status, False, False, 0)
-        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nCzas reakcji jest orientacyjny. Gaś laser między strzałami.')
+        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nOdstępy i wiek celu obejmują opóźnienia sprzętu. Gaś laser między strzałami.')
         note.set_line_wrap(True)
         box.pack_start(note, False, False, 0)
         self.refresh()
-        GLib.timeout_add(250, self.poll)
+        self.poll_source = GLib.timeout_add(250, self.poll)
 
     def action(self, button, callback):
         try:
@@ -117,7 +119,21 @@ class Panel(Gtk.Window):
             self.fields['screen'].append(str(i),f'{monitor.get_model() or "Ekran"} — {g.width}×{g.height} ({g.x},{g.y})')
             if monitor != display.get_primary_monitor():
                 self.fields['screen'].set_active_id(str(i))
+        self.input_changed()
         self.message = ('Wybierz kamerę. ' if not selected else '') + ('Brak rzutnika — podłącz HDMI i kliknij Odśwież.' if len(self.screens)<2 else 'Gotowe do podglądu i kalibracji.')
+
+    def mode_changed(self, *_):
+        mode = self.fields['mode'].get_active_id()
+        if mode:
+            self.fields['radius'].set_value(MODES[mode].radius)
+            self.fields['active_targets'].set_value(MODES[mode].count)
+            self.fields['duration'].set_active_id('60')
+            self.fields['targets'].set_value(10)
+
+    def input_changed(self, *_):
+        if self.fields['input_method'].get_active_id() == 'mouse' and self.fields['screen'].get_active_id() is None:
+            if self.screens:
+                self.fields['screen'].set_active_id('0')
 
     def state(self):
         try:
@@ -132,7 +148,8 @@ class Panel(Gtk.Window):
         a = dict(DEFAULTS)
         for key, field in self.fields.items():
             if key != 'screen':
-                a[key] = field.get_active_id() if key in ('camera','color') else field.get_value_as_int()
+                a[key] = (int(field.get_active_id()) if key == 'duration' else
+                          field.get_active_id() if key in ('camera','color','mode','input_method') else field.get_value_as_int())
         if not a['camera']:
             a['camera'] = self.settings['camera']
         state = self.state()
@@ -144,7 +161,7 @@ class Panel(Gtk.Window):
         temp = target.with_suffix('.tmp')
         temp.write_text(json.dumps(a,indent=2))
         temp.replace(target)
-        self.settings = a
+        self.settings = migrate_settings(a)
         self.message = 'Ustawienia zapisane na następne uruchomienia.'
 
     def spawn(self, name, script, args):
@@ -200,15 +217,26 @@ class Panel(Gtk.Window):
         if self.running('training'):
             return
         args = self.screen_args()
-        if not self.state().get('calibrated'):
+        mouse = self.fields['input_method'].get_active_id() == 'mouse'
+        if not mouse and not self.state().get('calibrated'):
             raise RuntimeError('Najpierw uruchom kamerę i wykonaj kalibrację. Poczekaj na status „gotowa”.')
+        mode = self.fields['mode'].get_active_id()
         radius = self.fields['radius'].get_value_as_int()
+        count = self.fields['active_targets'].get_value_as_int() if mode not in ('classic','spidershot') else 1
         w,h = self.screens[int(self.fields['screen'].get_active_id())][:2]
-        margin = radius+40
-        if w < 4*radius+40 or h < max(160,margin)+margin+80:
-            raise RuntimeError('Cel jest za duży dla tego ekranu. Zmniejsz promień.')
+        duration = int(self.fields['duration'].get_active_id())
+        try:
+            Game(Config(mode=mode,width=w,height=h,radius=radius,active_count=count,duration=duration,
+                        classic_total=self.fields['targets'].get_value_as_int()))
+        except ValueError as error:
+            raise RuntimeError('Nie można rozmieścić celów. Zmniejsz promień lub liczbę celów albo zwiększ ekran. '+str(error)) from error
+        self.save()
         self.stop_one('projector')
-        self.pending = args+['--targets',str(self.fields['targets'].get_value_as_int()),'--radius',str(radius)]
+        self.training_input = 'mouse' if mouse else 'laser'
+        self.pending = args+['--mode',mode,'--duration',str(duration),'--active-targets',str(count),
+                             '--targets',str(self.fields['targets'].get_value_as_int()),'--radius',str(radius)]
+        if mouse:
+            self.pending.append('--mouse-test')
         self.message = 'Przygotowuję trening…'
 
     def stop_one(self,name):
@@ -232,20 +260,22 @@ class Panel(Gtk.Window):
                 if code and not expected:
                     self.message = f'Błąd procesu {name}. Szczegóły w aimlab_panel.log.'
                 if name == 'camera':
-                    self.stop_one('training')
+                    if self.training_input != 'mouse':
+                        self.stop_one('training')
                     self.stop_one('projector')
-                    self.pending = None
+                    if self.training_input != 'mouse':
+                        self.pending = None
             elif name in self.stopping and time.monotonic()-self.stopping[name] > 2:
                 process.kill()
         state = self.state()
-        if self.running('training') and not state.get('calibrated'):
+        if self.running('training') and self.training_input != 'mouse' and not state.get('calibrated'):
             self.stop_one('training')
             self.message = 'Trening zatrzymany: brak gotowej kamery lub kalibracji.'
         if self.pending and not self.running('projector') and 'projector' not in self.stopping:
-            if state.get('calibrated'):
+            if self.training_input == 'mouse' or state.get('calibrated'):
                 try:
                     self.spawn('training','aimlab_training.py',self.pending)
-                    self.message = 'Trening trwa. Celuj w niebieskie koło i gaś laser między strzałami.'
+                    self.message = ('Test myszą: klikaj niebieskie cele.' if self.training_input == 'mouse' else 'Trening trwa. Celuj w niebieskie cele i gaś laser między strzałami.')
                 except (OSError, RuntimeError) as error:
                     self.message = str(error)
             self.pending = None
@@ -253,8 +283,19 @@ class Panel(Gtk.Window):
         self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message}')
         for widget in self.buttons:
             widget.set_sensitive(not self.stopping and not self.pending)
-        for field in self.fields.values():
-            field.set_sensitive(not self.running('camera') and not self.stopping)
+        for key,field in self.fields.items():
+            hardware = key in ('camera','color','minimum','delta')
+            enabled = not self.stopping and not self.pending and not self.running('training')
+            if hardware and self.running('camera'):
+                enabled = False
+            mode = self.fields['mode'].get_active_id()
+            if key == 'duration' and mode == 'classic':
+                enabled = False
+            if key == 'targets' and mode != 'classic':
+                enabled = False
+            if key == 'active_targets' and mode in ('classic','spidershot'):
+                enabled = False
+            field.set_sensitive(enabled)
         if self.closing and not self.children:
             self.state_path.unlink(missing_ok=True)
             self.log.close()
