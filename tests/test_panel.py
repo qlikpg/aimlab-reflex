@@ -95,6 +95,18 @@ class PanelTests(unittest.TestCase):
         self.assertIn('nieudana',self.window.message)
         self.assertNotIn('pomyślnie',self.window.message)
 
+    def test_camera_settings_do_not_confirm_or_close_calibration(self):
+        self.window.calibration_stage = 'confirm'
+        dialog = Mock()
+        self.window.calibration_dialog = dialog
+        with patch.object(self.window,'show_camera_controls') as show:
+            self.window.mouse_calibration_response(dialog,1001)
+            show.assert_called_once_with(dialog)
+        dialog.destroy.assert_not_called()
+        self.assertEqual(self.window.calibration_stage,'confirm')
+        self.assertIs(self.window.calibration_dialog,dialog)
+        self.window.calibration_dialog = None
+
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)

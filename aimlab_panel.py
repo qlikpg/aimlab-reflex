@@ -14,6 +14,7 @@ from gi.repository import Gdk, GLib, Gtk
 from aimlab_game_modes import Config, Game, MODES
 from aimlab_settings import DEFAULTS, migrate_settings
 from aimlab_calibration_report import format_report
+from aimlab_camera_controls import CameraControls, is_capture_device
 
 ROOT = Path(__file__).resolve().parent
 
@@ -40,6 +41,7 @@ class Panel(Gtk.Window):
         self.calibration_stage = None
         self.calibration_report = ROOT/'aimlab_calibration_report.json'
         self.calibration_dialog = None
+        self.camera_controls = None
         self.calibration_draft = ROOT/f'.calibration_draft_{time.time_ns()}.json'
         self.state_path = ROOT/f'.camera_status_{time.time_ns()}.json'
         self.log = (ROOT/'aimlab_panel.log').open('a')
@@ -77,14 +79,14 @@ class Panel(Gtk.Window):
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
-        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Start treningu',self.train), ('STOP',self.stop)]]:
+        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save), ('Ustawienia kamery',self.show_camera_controls)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration)], [('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
             box.pack_start(row, False, False, 0)
             for label, callback in labels:
                 button = Gtk.Button(label=label)
                 button.connect('clicked',self.action,callback)
                 row.pack_start(button, True, True, 0)
-                if label != 'STOP':
+                if label not in ('STOP','Ustawienia kamery'):
                     self.buttons.append(button)
         self.status = Gtk.Label(xalign=0)
         self.status.set_line_wrap(True)
@@ -110,7 +112,7 @@ class Panel(Gtk.Window):
         cameras = []
         for path in sorted(Path('/sys/class/video4linux').glob('video*')):
             device = '/dev/'+path.name
-            if Path(device).exists():
+            if Path(device).exists() and is_capture_device(device):
                 name = (path/'name').read_text().strip()
                 cameras.append((device,name))
                 self.fields['camera'].append(device,f'{name} ({device})')
@@ -211,6 +213,24 @@ class Panel(Gtk.Window):
         w,h,x,y = self.screens[i]
         return ['--width',str(w),'--height',str(h),'--screen-x',str(x),'--screen-y',str(y)]
 
+    def show_camera_controls(self, parent=None):
+        camera = self.fields['camera'].get_active_id()
+        if not camera or not is_capture_device(camera):
+            raise RuntimeError('Wybierz podłączoną kamerę z obrazem, nie interfejs pomocniczy.')
+        parent = parent or self.calibration_dialog or self
+        if self.camera_controls is not None:
+            if self.camera_controls.device == camera:
+                self.camera_controls.set_transient_for(parent)
+                self.camera_controls.set_modal(parent.get_modal())
+                self.camera_controls.present()
+                return
+            self.camera_controls.destroy()
+        controls = CameraControls(camera,parent)
+        self.camera_controls = controls
+        controls.connect('destroy',lambda window:setattr(self,'camera_controls',None))
+        controls.show_all()
+        controls.present()
+
     def preview(self):
         self.start_camera()
         self.message = 'Podgląd uruchomiony. Maska ma suwaki czułości.'
@@ -277,7 +297,7 @@ class Panel(Gtk.Window):
         dialog.format_secondary_text('Sprawdź cztery wskazane rogi w podglądzie kamery. '
                                      'Po potwierdzeniu uruchomi się etap laserowy. '
                                      'Możesz też powtórzyć wskazywanie rogów.')
-        dialog.add_buttons('Anuluj',Gtk.ResponseType.CANCEL,
+        dialog.add_buttons('Ustawienia kamery',1001,'Anuluj',Gtk.ResponseType.CANCEL,
                            'Powtórz',Gtk.ResponseType.REJECT,
                            'Potwierdź i przejdź do lasera',Gtk.ResponseType.ACCEPT)
         dialog.connect('response',self.mouse_calibration_response)
@@ -287,6 +307,14 @@ class Panel(Gtk.Window):
         self.message = 'Potwierdź kalibrację myszą w oknie dialogowym.'
 
     def mouse_calibration_response(self, dialog, response):
+        if response == 1001:
+            try:
+                self.show_camera_controls(dialog)
+            except (OSError,RuntimeError) as error:
+                dialog.format_secondary_text(str(error))
+            return
+        if self.camera_controls is not None:
+            self.camera_controls.destroy()
         self.calibration_dialog = None
         dialog.destroy()
         if response == Gtk.ResponseType.ACCEPT:

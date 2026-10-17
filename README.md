@@ -283,3 +283,15 @@ zwolnienie nagrania z pamięci.
 ### Dźwięk trafienia
 
 Wszystkie tryby treningowe odtwarzają krótki dzwoneczek po zaliczonym trafieniu, także w teście myszą. Pudło nie wydaje dźwięku. Odtwarzanie działa w tle przez systemowe `paplay` lub `aplay`; brak odtwarzacza nie przerywa treningu. Dźwięk jest generowany raz przy starcie, bez dodatkowych bibliotek. CLI `--no-hit-sound` wycisza dzwoneczek. Głośność ustawisz systemowym suwakiem dźwięku.
+
+### Ustawienia kamery w kalibracji
+
+Przycisk **Ustawienia kamery** jest dostępny w panelu także podczas kalibracji,
+a także bezpośrednio w oknie potwierdzania rogów. Otwiera natywne ustawienia
+aktualnie wybranej kamery: ekspozycję ręczną/automatyczną, czas ekspozycji,
+balans bieli, ostrość i pozostałe obsługiwane parametry. Zmiany działają na żywo,
+bez dodatkowego strumienia obrazu. Samo otwarcie niczego nie zmienia i nie
+potwierdza kalibracji. Czas ekspozycji ma jednostkę 0,1 ms (100 = 10 ms).
+Po zmianie ostrości powtórz etap myszy. Wartości są ustawiane w urządzeniu;
+po odłączeniu kamera może przywrócić swoje domyślne parametry.
+Lista kamer wyklucza interfejsy metadanych, które nie udostępniają obrazu.
