@@ -261,3 +261,5 @@ CLI: `python aimlab_video_calibration.py --camera /dev/video2 --width 1920
 --height 1080 --screen-x 1920 --screen-y 0`.
 
 Po zakończeniu lub przerwaniu kalibracji wybrany tryb treningu pozostaje bez zmian. Kalibracja jest jednym procesem z dwoma etapami i jednym przyciskiem. Start treningu automatycznie uruchamia kamerę i czeka na wczytanie kalibracji.
+
+Etap laserowy wyszukuje tarczę w obszarze przewidywanym przez potwierdzoną kalibrację myszy i kompensuje globalną zmianę jasności między klatkami. Niejednoznaczna lub niewidoczna tarcza powoduje ponowienie odczytu w tym samym oknie, zamiast zamknięcia etapu. Zgaś laser podczas przygotowywania tarczy; Q/Esc lub STOP nadal przerywa pomiar.

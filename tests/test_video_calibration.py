@@ -1,7 +1,7 @@
 import unittest
 import cv2
 import numpy as np
-from aimlab_video_calibration import locate, fit_correction, PulseGate, target_region, central_hit
+from aimlab_video_calibration import locate, fit_correction, PulseGate, target_region, central_hit, expected_target_region
 from aimlab_calibration_markers import draw_quarter_target
 
 
@@ -26,6 +26,20 @@ class VideoCalibrationTests(unittest.TestCase):
         self.assertFalse(central_hit(region,(-10,400)))
         self.assertLess(abs(center[0]-600),2)
         self.assertLess(abs(center[1]-400),2)
+
+    def test_confirmed_calibration_excludes_other_changes(self):
+        from aimlab_irl_camera_mvp import homography
+        base = np.full((720,1280,3),80,np.uint8)
+        after = np.full_like(base,90)  # Global exposure changed during projector transition.
+        draw_quarter_target(after,(600,400),40)
+        draw_quarter_target(after,(100,100),40)  # Equally large distractor.
+        matrix = homography([(0,0),(1279,0),(1279,719),(0,719)])
+        expected = expected_target_region(matrix,(600,400),40,1280,720,(1280,720))
+        center,region = target_region(base,after,expected)
+        self.assertLess(abs(center[0]-600),2)
+        self.assertLess(abs(center[1]-400),2)
+        self.assertTrue(central_hit(region,(600,400)))
+        self.assertFalse(central_hit(region,(100,100)))
 
     def test_marker_center(self):
         base = np.full((720,1280,3),100,np.uint8)

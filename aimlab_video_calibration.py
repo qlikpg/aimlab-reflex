@@ -32,22 +32,44 @@ def locate(before, after):
     return x+(w-1)/2, y+(h-1)/2
 
 
-def target_region(before, after):
+def target_region(before, after, expected=None):
     """Find the visible target independently of the old calibration and laser aim."""
-    difference = cv2.absdiff(before, after).max(axis=2)
+    # Remove a global exposure/color shift before measuring the changed target.
+    delta = after.astype(np.int16)-before.astype(np.int16)
+    offset = np.median(delta[::8,::8],axis=(0,1))
+    difference = np.abs(delta-offset).max(axis=2)
     mask = (difference > max(25, float(np.percentile(difference,99.5))*.5)).astype(np.uint8)
+    if expected is not None:
+        mask[expected == 0] = 0
     count,labels,stats,_ = cv2.connectedComponentsWithStats(mask)
     candidates = [i for i in range(1,count) if 30 <= stats[i,4] <= mask.size*.03]
     if not candidates:
         raise ValueError('Nie widać tarczy w kamerze; kalibracja bez zmian.')
     best = max(candidates,key=lambda i:stats[i,4])
-    if sum(stats[i,4] > stats[best,4]*.6 for i in candidates) > 1:
-        raise ValueError('Niejednoznaczny obraz tarczy; kalibracja bez zmian.')
-    pixels = cv2.findNonZero((labels == best).astype(np.uint8))
+    if expected is None and sum(stats[i,4] > stats[best,4]*.6 for i in candidates) > 1:
+        # Separate quarters of one marker may form separate components.
+        for i in candidates:
+            if i != best and stats[i,4] > stats[best,4]*.6:
+                separation = np.linalg.norm(np.array(stats[i,:2])-stats[best,:2])
+                if separation > max(stats[best,2:4])*2+12:
+                    raise ValueError('Niejednoznaczny obraz tarczy; ponów pomiar.')
+    selected = np.isin(labels,candidates) if expected is not None else labels == best
+    pixels = cv2.findNonZero(selected.astype(np.uint8))
     region = np.zeros_like(mask)
     cv2.fillConvexPoly(region,cv2.convexHull(pixels),255)
-    x,y,w,h,_ = stats[best]
+    x,y,w,h = cv2.boundingRect(pixels)
     return (x+(w-1)/2,y+(h-1)/2),region
+
+
+def expected_target_region(matrix, point, radius, width, height, frame_size):
+    # Search near the target predicted by the explicitly confirmed mouse calibration.
+    polygon = [(point[0]+np.cos(t)*radius*2,point[1]+np.sin(t)*radius*2)
+               for t in np.linspace(0,2*np.pi,48,endpoint=False)]
+    uv = np.float32(polygon)/[width-1,height-1]
+    camera = cv2.perspectiveTransform(np.float32([uv]),np.linalg.inv(matrix))[0]
+    mask = np.zeros((frame_size[1],frame_size[0]),np.uint8)
+    cv2.fillConvexPoly(mask,np.int32(np.round(camera)),255)
+    return mask
 
 
 def central_hit(region, spot):
@@ -147,6 +169,11 @@ def main():
             cv2.namedWindow(name,cv2.WINDOW_NORMAL)
             cv2.moveWindow(name,a.screen_x,a.screen_y)
             cv2.setWindowProperty(name,cv2.WND_PROP_FULLSCREEN,cv2.WINDOW_FULLSCREEN)
+            from aimlab_irl_camera_mvp import homography
+            saved = json.loads(a.calibration.read_text(encoding='utf-8'))
+            if saved.get('camera','/dev/video2') != a.camera or saved['frame_size'] != list(size):
+                raise ValueError('Kamera lub rozdzielczość różni się od potwierdzonej kalibracji.')
+            initial_matrix = homography(saved['points'])
             measured_centers, regions = [], []
             for index,point in enumerate(refs):
                 image = base.copy()
@@ -167,10 +194,25 @@ def main():
                         if time.monotonic()-started > .8 and laser is None:
                             frames.append(current)
                     return np.median(frames,axis=0).astype(np.uint8)
-                before = capture_reference(image)
-                draw_quarter_target(image,point,max(22,round(a.width/1920*40)))
-                after = capture_reference(image)
-                center,region = target_region(before,after)
+                target_radius = max(22,round(a.width/1920*40))
+                expected = expected_target_region(initial_matrix,point,target_radius,
+                                                  a.width,a.height,size)
+                while True:
+                    before = capture_reference(image)
+                    target_image = image.copy()
+                    draw_quarter_target(target_image,point,target_radius)
+                    after = capture_reference(target_image)
+                    try:
+                        center,region = target_region(before,after,expected)
+                        break
+                    except ValueError as error:
+                        print(f'Punkt {index+1}: {error} Ponawiam, zgas laser.',flush=True)
+                        # Keep the window open; cancellation is handled by capture_reference.
+                        notice = image.copy()
+                        cv2.putText(notice,'Target unclear - laser OFF; retrying...',
+                                    (25,round(a.height*.22)),cv2.FONT_HERSHEY_SIMPLEX,.65,(255,255,255),2)
+                        capture_reference(notice)
+                image = target_image
                 cv2.imshow(name,image)
                 gate = PulseGate()
                 shown = time.monotonic()
