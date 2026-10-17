@@ -231,12 +231,13 @@ Punkty oznaczono tarczami w czterech naprzemiennych czarno-białych ćwiartkach.
 ### Kalibracja wideo (Classic)
 
 Kliknij STOP, wybierz kamerę i ekran projektora, następnie **Kalibracja wideo
-(Classic)**. Wyłącz laser, unieruchom kamerę i zachowaj stałe oświetlenie.
-Tryb wyświetla pojedyncze nieruchome tarcze na tle łąki, podobnie jak Classic,
-lecz przesuwa je automatycznie — nie strzelaj. 25 pozycji zajmuje około 50 s.
-Program nagrywa po trzy klatki przed i po wyświetleniu każdej tarczy,
-analizuje różnicę obrazów i dopasowuje istniejącą homografię. Nie zmienia
-formatu impulsów ani detektora lasera.
+(Classic)**. Strzelaj laserem dokładnie w środek każdej z 25 tarcz.
+Cel pozostaje aż do wykrycia świeżego impulsu wewnątrz środkowej części tarczy widocznej w kamerze. Pudło wyświetla MISS i wymaga ponowienia strzału. Gaś laser między strzałami
+(minimum 150 ms). Początkowe 0,8 s każdego celu jest pomijane dla usunięcia
+starych klatek. Program używa istniejącego detektora i progów panelu. Przed każdym celem mierzy obraz tła i tarczy bez lasera; zgaś laser w tym czasie.
+Nagranie zawiera wyłącznie klatki z wykrytymi impulsami; analiza odczytuje
+z niego pozycje lasera i ponownie sprawdza trafienie. Korekta korzysta z niezależnie zaobserwowanych środków tarcz, zamiast zakładać idealne trafienie w środek.
+Nie trzeba zmieścić się w ustalonym czasie. Q/Esc lub STOP przerywa pomiar.
 
 20 punktów służy dopasowaniu (RANSAC, minimum 18 zgodnych), pięć osobnych
 punktów na przekątnej służy kontroli. Korekta wymaga RMS ≤8 px i maksymalnego
@@ -255,3 +256,5 @@ STOP/Q/Esc, a także po zabiciu procesu. Nie archiwizujemy ani nie wysyłamy wid
 Pozostają tylko kalibracja, jej poprzednia wersja i tekstowe wyniki pomiaru.
 CLI: `python aimlab_video_calibration.py --camera /dev/video2 --width 1920
 --height 1080 --screen-x 1920 --screen-y 0`.
+
+Po zakończeniu lub przerwaniu kalibracji panel wraca do poprzedniego trybu treningu. Start treningu automatycznie uruchamia kamerę i czeka na wczytanie kalibracji.

@@ -3,7 +3,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import patch, Mock
 try:
     import aimlab_panel as panel
     GTK_AVAILABLE = bool(panel.Gtk.init_check()[0])
@@ -25,6 +25,44 @@ class PanelTests(unittest.TestCase):
         self.window.destroy()
         self.root.stop()
         self.temp.cleanup()
+
+    def test_video_mode_routes_start_to_calibration(self):
+        self.window.fields['mode'].set_active_id('video-calibration')
+        self.window.poll()
+        self.assertFalse(self.window.fields['radius'].get_sensitive())
+        self.window.save()
+        self.assertEqual(panel.load_settings()['mode'],'video-calibration')
+        with patch.object(self.window,'video_calibration') as start:
+            self.window.train()
+            start.assert_called_once()
+
+    def test_video_completion_restores_training(self):
+        self.window.fields['mode'].set_active_id('gridshot')
+        self.window.fields['mode'].set_active_id('video-calibration')
+        self.window.video_running = True
+        process = Mock()
+        process.poll.return_value = 0
+        self.window.children['projector'] = process
+        self.window.poll()
+        self.assertFalse(self.window.video_running)
+        self.assertEqual(self.window.fields['mode'].get_active_id(),'gridshot')
+        self.assertEqual(panel.load_settings()['mode'],'gridshot')
+
+    def test_pending_training_waits_for_camera(self):
+        self.window.pending = ['--mode','classic']
+        process = Mock()
+        process.poll.return_value = None
+        self.window.children['camera'] = process
+        with patch.object(self.window,'state',return_value={}),patch.object(self.window,'spawn') as spawn:
+            self.window.poll()
+            spawn.assert_not_called()
+            self.assertIsNotNone(self.window.pending)
+        state = dict(calibrated=True,minimum=180,delta=45,laser_color='green')
+        with patch.object(self.window,'state',return_value=state),patch.object(self.window,'spawn') as spawn:
+            self.window.poll()
+            spawn.assert_called_once()
+            self.assertIsNone(self.window.pending)
+        self.window.children.clear()
 
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:

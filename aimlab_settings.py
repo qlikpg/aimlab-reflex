@@ -14,16 +14,16 @@ def migrate_settings(data):
         return values
     if isinstance(data.get('camera'),str):
         values['camera'] = data['camera']
-    for key,choices in [('color',('green','red')),('mode',MODES),('input_method',('laser','mouse')),('target_style',TARGET_STYLES)]:
+    for key,choices in [('color',('green','red')),('mode',(*MODES,'video-calibration')),('input_method',('laser','mouse')),('target_style',TARGET_STYLES)]:
         if isinstance(data.get(key),str) and data[key] in choices:
             values[key] = data[key]
-    preset = MODES[values['mode']]
+    preset = MODES.get(values['mode'],MODES['classic'])
     values.update(radius=preset.radius,active_targets=preset.count)
     for key,low,high in [('minimum',0,255),('delta',0,255),('targets',1,100),('radius',5,300),('active_targets',1,24)]:
         if type(data.get(key)) is int and low <= data[key] <= high:
             values[key] = data[key]
     if type(data.get('duration')) is int and data['duration'] in (30,60,120):
         values['duration'] = data['duration']
-    if values['mode'] in ('classic','spidershot','trap-spidershot'):
+    if values['mode'] in ('classic','spidershot','trap-spidershot','video-calibration'):
         values['active_targets'] = 1
     return values

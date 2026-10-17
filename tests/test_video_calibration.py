@@ -1,11 +1,32 @@
 import unittest
 import cv2
 import numpy as np
-from aimlab_video_calibration import locate, fit_correction
+from aimlab_video_calibration import locate, fit_correction, PulseGate, target_region, central_hit
 from aimlab_calibration_markers import draw_quarter_target
 
 
 class VideoCalibrationTests(unittest.TestCase):
+    def test_waits_for_fresh_pulse(self):
+        gate = PulseGate()
+        self.assertFalse(gate.update((10,10),0))
+        self.assertFalse(gate.update(None,.1))
+        self.assertFalse(gate.update(None,.3))
+        self.assertTrue(gate.update((10,10),.31))
+        self.assertFalse(gate.update((10,10),.4))
+        self.assertFalse(PulseGate().update((10,10),.5))
+
+    def test_hit_must_be_in_observed_target_center(self):
+        base = np.full((720,1280,3),100,np.uint8)
+        image = base.copy()
+        draw_quarter_target(image,(600,400),40)
+        center,region = target_region(base,image)
+        self.assertTrue(central_hit(region,(606,404)))
+        self.assertFalse(central_hit(region,(630,430)))
+        self.assertFalse(central_hit(region,(800,600)))
+        self.assertFalse(central_hit(region,(-10,400)))
+        self.assertLess(abs(center[0]-600),2)
+        self.assertLess(abs(center[1]-400),2)
+
     def test_marker_center(self):
         base = np.full((720,1280,3),100,np.uint8)
         image = base.copy()

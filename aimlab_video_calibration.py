@@ -14,6 +14,7 @@ import cv2
 import numpy as np
 from aimlab_calibration_markers import draw_quarter_target
 from aimlab_training import load_background
+from aimlab_irl_camera_mvp import detect
 
 
 def locate(before, after):
@@ -29,6 +30,34 @@ def locate(before, after):
     # Bounding-box center is independent of the alternating sector brightness.
     x,y,w,h,_ = stats[best]
     return x+(w-1)/2, y+(h-1)/2
+
+
+def target_region(before, after):
+    """Find the visible target independently of the old calibration and laser aim."""
+    difference = cv2.absdiff(before, after).max(axis=2)
+    mask = (difference > max(25, float(np.percentile(difference,99.5))*.5)).astype(np.uint8)
+    count,labels,stats,_ = cv2.connectedComponentsWithStats(mask)
+    candidates = [i for i in range(1,count) if 30 <= stats[i,4] <= mask.size*.03]
+    if not candidates:
+        raise ValueError('Nie widać tarczy w kamerze; kalibracja bez zmian.')
+    best = max(candidates,key=lambda i:stats[i,4])
+    if sum(stats[i,4] > stats[best,4]*.6 for i in candidates) > 1:
+        raise ValueError('Niejednoznaczny obraz tarczy; kalibracja bez zmian.')
+    pixels = cv2.findNonZero((labels == best).astype(np.uint8))
+    region = np.zeros_like(mask)
+    cv2.fillConvexPoly(region,cv2.convexHull(pixels),255)
+    x,y,w,h,_ = stats[best]
+    return (x+(w-1)/2,y+(h-1)/2),region
+
+
+def central_hit(region, spot):
+    if spot is None:
+        return False
+    x,y = map(round,spot)
+    if not (0 <= y < region.shape[0] and 0 <= x < region.shape[1]):
+        return False
+    distance = cv2.distanceTransform(region,cv2.DIST_L2,5)
+    return bool(distance.max() > 0 and distance[y,x] >= distance.max()*.45)
 
 
 def fit_correction(camera_points, references, width, height):
@@ -50,6 +79,26 @@ def fit_correction(camera_points, references, width, height):
     return corners.tolist(), errors.tolist()
 
 
+class PulseGate:
+    """A new target requires 150 ms darkness before accepting one pulse."""
+    def __init__(self):
+        self.absent_since = None
+        self.armed = False
+
+    def update(self, spot, now):
+        if spot is None:
+            if self.absent_since is None:
+                self.absent_since = now
+            if now-self.absent_since >= .150:
+                self.armed = True
+            return False
+        self.absent_since = None
+        if self.armed:
+            self.armed = False
+            return True
+        return False
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--camera',required=True)
@@ -58,6 +107,13 @@ def main():
     p.add_argument('--screen-x',type=int,default=1920)
     p.add_argument('--screen-y',type=int,default=0)
     p.add_argument('--calibration',type=Path,default=Path('aimlab_calibration.json'))
+    p.add_argument('--laser-color', choices=('green','red'), default='green')
+    p.add_argument('--green-min', type=int, default=180)
+    p.add_argument('--green-delta', type=int, default=45)
+    p.add_argument('--red-min', type=int, default=210)
+    p.add_argument('--red-delta', type=int, default=65)
+    p.add_argument('--min-area', type=int, default=2)
+    p.add_argument('--max-area', type=int, default=1500)
     a = p.parse_args()
     if min(a.width,a.height)<240:
         p.error('Nieprawidłowy rozmiar ekranu')
@@ -91,44 +147,74 @@ def main():
             cv2.namedWindow(name,cv2.WINDOW_NORMAL)
             cv2.moveWindow(name,a.screen_x,a.screen_y)
             cv2.setWindowProperty(name,cv2.WND_PROP_FULLSCREEN,cv2.WINDOW_FULLSCREEN)
+            measured_centers, regions = [], []
             for index,point in enumerate(refs):
-                for active in (False,True):
-                    image = base.copy()
-                    if active:
-                        draw_quarter_target(image,point,max(22,round(a.width/1920*40)))
-                    cv2.imshow(name,image)
-                    # Drain camera buffers while projector and exposure settle.
-                    start = time.monotonic()
-                    recorded = 0
-                    while recorded < 3:
+                image = base.copy()
+                cv2.putText(image,f'{index+1}/25 - shoot CENTER; release laser between shots',
+                            (25,round(a.height*.17)),cv2.FONT_HERSHEY_SIMPLEX,.65,(255,255,255),2)
+                def capture_reference(display):
+                    cv2.imshow(name,display)
+                    started = time.monotonic()
+                    frames = []
+                    while len(frames)<3:
                         key = cv2.waitKey(10)&255
                         if key in (27,ord('q')) or cv2.getWindowProperty(name,cv2.WND_PROP_VISIBLE)<1:
                             raise InterruptedError('Pomiar przerwany; nagranie usunięte.')
-                        ok,frame = cap.read()
+                        ok,current = cap.read()
                         if not ok:
-                            raise ValueError('Utracono obraz kamery.')
-                        if time.monotonic()-start > .8:
-                            if shutil.disk_usage('/dev/shm').free < 20*1024**2:
-                                raise ValueError('Brak pamięci na nagranie; kalibracja bez zmian.')
-                            writer.write(frame)
-                            recorded += 1
-                print(f'Pomiar {index+1}/25',flush=True)
+                            raise ValueError('Brak obrazu kamery.')
+                        _,laser = detect(current,a)
+                        if time.monotonic()-started > .8 and laser is None:
+                            frames.append(current)
+                    return np.median(frames,axis=0).astype(np.uint8)
+                before = capture_reference(image)
+                draw_quarter_target(image,point,max(22,round(a.width/1920*40)))
+                after = capture_reference(image)
+                center,region = target_region(before,after)
+                cv2.imshow(name,image)
+                gate = PulseGate()
+                shown = time.monotonic()
+                while True:
+                    key = cv2.waitKey(10)&255
+                    if key in (27,ord('q')) or cv2.getWindowProperty(name,cv2.WND_PROP_VISIBLE)<1:
+                        raise InterruptedError('Pomiar przerwany; nagranie usunięte.')
+                    ok,frame = cap.read()
+                    if not ok:
+                        raise ValueError('Utracono obraz kamery.')
+                    now = time.monotonic()
+                    _,spot = detect(frame,a)
+                    # Discard buffered/pre-presentation pulses and require a fresh release.
+                    if now-shown < .8:
+                        continue
+                    if gate.update(spot,now):
+                        if not central_hit(region,spot):
+                            feedback = image.copy()
+                            cv2.putText(feedback,'MISS - aim at target center; try again',
+                                        (25,round(a.height*.22)),cv2.FONT_HERSHEY_SIMPLEX,.7,(255,255,255),2)
+                            cv2.imshow(name,feedback)
+                            print(f'Pudlo {index+1}/25 - ponow strzal',flush=True)
+                            continue
+                        measured_centers.append(center)
+                        regions.append(region)
+                        if shutil.disk_usage('/dev/shm').free < 20*1024**2:
+                            raise ValueError('Brak pamięci; kalibracja bez zmian.')
+                        writer.write(frame)
+                        break
+                print(f'Hit {index+1}/25',flush=True)
             writer.release()
             writer = None
             video = cv2.VideoCapture(f'/proc/self/fd/{recording_fd}')
             points = []
             try:
                 for _ in refs:
-                    groups = []
-                    for _ in range(2):
-                        frames = []
-                        for _ in range(3):
-                            ok,frame = video.read()
-                            if not ok:
-                                raise ValueError('Niepełne nagranie; kalibracja bez zmian.')
-                            frames.append(frame)
-                        groups.append(np.median(frames,axis=0).astype(np.uint8))
-                    points.append(locate(*groups))
+                    ok,frame = video.read()
+                    if not ok:
+                        raise ValueError('Niepełne nagranie; kalibracja bez zmian.')
+                    _,spot = detect(frame,a)
+                    if not central_hit(regions[len(points)],spot):
+                        raise ValueError('Niepotwierdzony hit w nagraniu; kalibracja bez zmian.')
+                    # Use the observed target center, never assume the user hit its exact center.
+                    points.append(measured_centers[len(points)])
             finally:
                 video.release()
             corners,errors = fit_correction(points,refs,a.width,a.height)
