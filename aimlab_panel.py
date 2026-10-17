@@ -13,6 +13,7 @@ from gi.repository import Gdk, GLib, Gtk
 
 from aimlab_game_modes import Config, Game, MODES
 from aimlab_settings import DEFAULTS, migrate_settings
+from aimlab_calibration_report import format_report
 
 ROOT = Path(__file__).resolve().parent
 
@@ -37,6 +38,7 @@ class Panel(Gtk.Window):
         self.training_input = 'laser'
         self.last_training_mode = 'classic'
         self.calibration_stage = None
+        self.calibration_report = ROOT/'aimlab_calibration_report.json'
         self.calibration_dialog = None
         self.calibration_draft = ROOT/f'.calibration_draft_{time.time_ns()}.json'
         self.state_path = ROOT/f'.camera_status_{time.time_ns()}.json'
@@ -222,9 +224,32 @@ class Panel(Gtk.Window):
         args = self.screen_args()
         self.save()
         a = self.settings
-        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,*args,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta'])])
+        self.calibration_report.unlink(missing_ok=True)
+        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,'--report-file',str(self.calibration_report),*args,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta'])])
         self.video_running = True
         self.message = 'Kalibracja wideo: strzelaj w środek tarczy. Następny cel po impulsie. Gaś laser między strzałami; nie ruszaj kamerą. Nagranie zostanie usunięte; wynik w aimlab_panel.log.'
+
+    def show_calibration_report(self, code, expected=False):
+        try:
+            report = json.loads(self.calibration_report.read_text(encoding='utf-8'))
+            if not isinstance(report,dict):
+                raise ValueError('Nieprawidłowy raport')
+            if code != 0 and report.get('status') in ('applied','unchanged'):
+                report['status'] = 'failed'
+        except (OSError,ValueError):
+            report = dict(status='cancelled' if expected else 'failed',
+                          message='Proces nie dostarczył pełnego raportu. Szczegóły w aimlab_panel.log.')
+        self.message = format_report(report)
+        if expected:
+            return
+        success = report.get('status') in ('applied','unchanged')
+        dialog = Gtk.MessageDialog(transient_for=self,modal=True,
+                                   message_type=Gtk.MessageType.INFO if success else Gtk.MessageType.WARNING,
+                                   buttons=Gtk.ButtonsType.OK,text='Raport kalibracji')
+        dialog.format_secondary_text(self.message)
+        dialog.connect('response',lambda window,response:window.destroy())
+        dialog.show_all()
+        dialog.present()
 
     def check_calibration(self):
         if any(self.running(name) for name in ('camera','training','projector')):
@@ -375,8 +400,7 @@ class Panel(Gtk.Window):
                     self.calibration_stage = None
                     self.calibration_draft.unlink(missing_ok=True)
                     self.save()
-                    if not expected:
-                        self.message = ('Kalibracja wideo zakończona. Nagranie usunięte. Szczegóły w aimlab_panel.log.' if code == 0 else 'Pomiar wideo odrzucony. Kalibracja zachowana, nagranie usunięte. Szczegóły w aimlab_panel.log.')
+                    self.show_calibration_report(code,expected)
                 if name == 'camera':
                     if self.training_input != 'mouse':
                         self.stop_one('training')
@@ -402,7 +426,7 @@ class Panel(Gtk.Window):
                 self.pending = None
                 self.message = 'Brak poprawnej kalibracji kamery. Wykonaj kalibrację czterech rogów.'
         camera = 'wyłączona' if not self.running('camera') else ('uruchamianie…' if not state else ('gotowa' if state.get('calibrated') else 'wymaga kalibracji'))
-        self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message}')
+        self.status.set_text(f'Kamera: {camera} | Trening: {"włączony" if self.running("training") else "wyłączony"}\n{self.message.splitlines()[0] if self.message else ""}')
         for widget in self.buttons:
             widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False) and not self.calibration_stage)
         for key,field in self.fields.items():

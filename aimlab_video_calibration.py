@@ -92,13 +92,31 @@ def fit_correction(camera_points, references, width, height):
     projected = cv2.perspectiveTransform(src[holdout,None,:],matrix)[:,0,:]
     errors = np.linalg.norm(projected-dst[holdout],axis=1)
     if not np.isfinite(errors).all() or np.sqrt(np.mean(errors**2))>8 or errors.max()>15:
-        raise ValueError('Błąd kontroli przekracza 8 px RMS / 15 px max. Kalibracja bez zmian.')
+        raise ValueError(f'Błąd kontroli RMS={np.sqrt(np.mean(errors**2)):.2f}px, max={errors.max():.2f}px (limity: 8 / 15 px). Kalibracja bez zmian.')
     normalized = np.diag([1/(width-1),1/(height-1),1.]) @ matrix
     corners = cv2.perspectiveTransform(np.float32([[[0,0],[1,0],[1,1],[0,1]]]),
                                          np.linalg.inv(normalized))[0]
     from aimlab_irl_camera_mvp import homography
     homography(corners)  # Validate geometry using the existing calibration rules.
     return corners.tolist(), errors.tolist()
+
+
+def calibration_metrics(old_matrix, new_corners, points, references, width, height, applied):
+    from aimlab_irl_camera_mvp import homography
+    new_matrix = homography(new_corners) if applied else old_matrix
+    src = np.float32([points])
+    scale = [width-1,height-1]
+    before = cv2.perspectiveTransform(src,old_matrix)[0]*scale
+    after = cv2.perspectiveTransform(src,new_matrix)[0]*scale
+    holdout = [i for i in range(25) if i%5 == i//5]
+    old_errors = np.linalg.norm(before[holdout]-np.array(references)[holdout],axis=1)
+    new_errors = np.linalg.norm(after[holdout]-np.array(references)[holdout],axis=1)
+    shifts = after-before
+    return dict(rms_before_px=float(np.sqrt(np.mean(old_errors**2))),
+                rms_after_px=float(np.sqrt(np.mean(new_errors**2))),
+                max_before_px=float(old_errors.max()),max_after_px=float(new_errors.max()),
+                shift_x_px=float(shifts[:,0].mean()),shift_y_px=float(shifts[:,1].mean()),
+                max_shift_px=float(np.linalg.norm(shifts,axis=1).max()))
 
 
 class PulseGate:
@@ -124,6 +142,7 @@ class PulseGate:
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--camera',required=True)
+    p.add_argument('--report-file',type=Path,default=Path('aimlab_calibration_report.json'))
     p.add_argument('--width',type=int,default=1920)
     p.add_argument('--height',type=int,default=1080)
     p.add_argument('--screen-x',type=int,default=1920)
@@ -139,15 +158,17 @@ def main():
     a = p.parse_args()
     if min(a.width,a.height)<240:
         p.error('Nieprawidłowy rozmiar ekranu')
+    report_start = time.monotonic()
+    run_report = dict(status='failed',hits=0,misses=0,retries=0,video_removed=False,
+                      utc=time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()))
     cap = cv2.VideoCapture(int(a.camera) if a.camera.isdigit() else a.camera,cv2.CAP_V4L2)
     writer = None
     recording_fd = None
     name = 'AimLab IRL - Video calibration'
     # RAM-backed temporary storage: no recording survives reboot; finally deletes it immediately.
-    if not Path('/dev/shm').is_dir() or shutil.disk_usage('/dev/shm').free < 100*1024**2:
-        cap.release()
-        raise SystemExit('Brak 100 MB wolnej pamięci /dev/shm na nagranie tymczasowe.')
     try:
+        if not Path('/dev/shm').is_dir() or shutil.disk_usage('/dev/shm').free < 100*1024**2:
+            raise ValueError('Brak 100 MB wolnej pamięci /dev/shm na nagranie tymczasowe.')
         with tempfile.TemporaryDirectory(prefix='aimlab-video-',dir='/dev/shm') as temporary:
             cap.set(cv2.CAP_PROP_FRAME_WIDTH,1280)
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT,720)
@@ -206,6 +227,7 @@ def main():
                         center,region = target_region(before,after,expected)
                         break
                     except ValueError as error:
+                        run_report['retries'] += 1
                         print(f'Punkt {index+1}: {error} Ponawiam, zgas laser.',flush=True)
                         # Keep the window open; cancellation is handled by capture_reference.
                         notice = image.copy()
@@ -230,12 +252,14 @@ def main():
                         continue
                     if gate.update(spot,now):
                         if not central_hit(region,spot):
+                            run_report['misses'] += 1
                             feedback = image.copy()
                             cv2.putText(feedback,'MISS - aim at target center; try again',
                                         (25,round(a.height*.22)),cv2.FONT_HERSHEY_SIMPLEX,.7,(255,255,255),2)
                             cv2.imshow(name,feedback)
                             print(f'Pudlo {index+1}/25 - ponow strzal',flush=True)
                             continue
+                        run_report['hits'] += 1
                         measured_centers.append(center)
                         regions.append(region)
                         if shutil.disk_usage('/dev/shm').free < 20*1024**2:
@@ -271,13 +295,18 @@ def main():
                     old_uv = cv2.perspectiveTransform(np.float32([[points[i] for i in held]]),old_matrix)[0]
                     old_errors = np.linalg.norm(old_uv*[a.width-1,a.height-1]-np.array([refs[i] for i in held]),axis=1)
                     if np.mean(old_errors**2) <= np.mean(np.square(errors)):
+                        run_report.update(status='unchanged',metrics=calibration_metrics(old_matrix,corners,points,refs,a.width,a.height,False))
                         print('Poprzednia kalibracja jest co najmniej równie dokładna; zachowana. Nagranie usunięte.',flush=True)
                         return
                 shutil.copy2(a.calibration,a.calibration.with_suffix('.previous.json'))
             pending = a.calibration.with_suffix('.tmp')
             pending.write_text(json.dumps(report,indent=2),encoding='utf-8')
             pending.replace(a.calibration)
+            run_report.update(status='applied',metrics=calibration_metrics(initial_matrix,corners,points,refs,a.width,a.height,True))
             print(f'Korekta zapisana. Kontrola RMS={np.sqrt(np.mean(np.square(errors))):.2f}px; nagranie usunięte.',flush=True)
+    except BaseException as error:
+        run_report.update(status='cancelled' if isinstance(error,(InterruptedError,SystemExit,KeyboardInterrupt)) else 'failed',message='Pomiar przerwany przez użytkownika.' if isinstance(error,(SystemExit,KeyboardInterrupt)) else str(error))
+        raise
     finally:
         if writer is not None:
             writer.release()
@@ -285,6 +314,11 @@ def main():
         if recording_fd is not None:
             os.close(recording_fd)
         cv2.destroyAllWindows()
+        run_report['video_removed'] = True
+        run_report['duration_s'] = time.monotonic()-report_start
+        temporary_report = a.report_file.with_suffix('.tmp')
+        temporary_report.write_text(json.dumps(run_report,indent=2),encoding='utf-8')
+        temporary_report.replace(a.report_file)
 
 
 if __name__ == '__main__':

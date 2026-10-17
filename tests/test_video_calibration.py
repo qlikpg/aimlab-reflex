@@ -1,4 +1,9 @@
 import unittest
+import json
+import tempfile
+from pathlib import Path
+from unittest.mock import patch, Mock
+import aimlab_video_calibration as calibration
 import cv2
 import numpy as np
 from aimlab_video_calibration import locate, fit_correction, PulseGate, target_region, central_hit, expected_target_region
@@ -40,6 +45,35 @@ class VideoCalibrationTests(unittest.TestCase):
         self.assertLess(abs(center[1]-400),2)
         self.assertTrue(central_hit(region,(600,400)))
         self.assertFalse(central_hit(region,(100,100)))
+
+    def test_report_measures_applied_shift(self):
+        from aimlab_irl_camera_mvp import homography
+        refs = [(x,y) for y in (100,300,500,700,900) for x in (100,300,500,700,900)]
+        old = homography([(0,0),(1000,0),(1000,1000),(0,1000)])
+        new = [[10,20],[1010,20],[1010,1020],[10,1020]]
+        points = [(x+10,y+20) for x,y in refs]
+        metrics = calibration.calibration_metrics(old,new,points,refs,1001,1001,True)
+        self.assertAlmostEqual(metrics['shift_x_px'],-10,places=3)
+        self.assertAlmostEqual(metrics['shift_y_px'],-20,places=3)
+        self.assertLess(metrics['rms_after_px'],.001)
+        unchanged = calibration.calibration_metrics(old,new,points,refs,1001,1001,False)
+        self.assertEqual(unchanged['max_shift_px'],0)
+
+    def test_failed_capture_writes_report(self):
+        with tempfile.TemporaryDirectory() as directory:
+            report = Path(directory)/'report.json'
+            camera = Mock()
+            camera.isOpened.return_value = False
+            with patch.object(calibration.sys,'argv',['calibration','--camera','0','--report-file',str(report)]), \
+                 patch.object(calibration.cv2,'VideoCapture',return_value=camera), \
+                 patch.object(calibration.cv2,'destroyAllWindows'):
+                with self.assertRaises(ValueError):
+                    calibration.main()
+            result = json.loads(report.read_text())
+            self.assertEqual(result['status'],'failed')
+            self.assertTrue(result['video_removed'])
+            self.assertEqual(result['hits'],0)
+            camera.release.assert_called_once()
 
     def test_marker_center(self):
         base = np.full((720,1280,3),100,np.uint8)

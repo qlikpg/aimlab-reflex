@@ -263,3 +263,19 @@ CLI: `python aimlab_video_calibration.py --camera /dev/video2 --width 1920
 Po zakończeniu lub przerwaniu kalibracji wybrany tryb treningu pozostaje bez zmian. Kalibracja jest jednym procesem z dwoma etapami i jednym przyciskiem. Start treningu automatycznie uruchamia kamerę i czeka na wczytanie kalibracji.
 
 Etap laserowy wyszukuje tarczę w obszarze przewidywanym przez potwierdzoną kalibrację myszy i kompensuje globalną zmianę jasności między klatkami. Niejednoznaczna lub niewidoczna tarcza powoduje ponowienie odczytu w tym samym oknie, zamiast zamknięcia etapu. Zgaś laser podczas przygotowywania tarczy; Q/Esc lub STOP nadal przerywa pomiar.
+
+### Raport po kalibracji
+
+Po etapie laserowym panel pokazuje okno „Raport kalibracji” z jednoznacznym
+wynikiem: zapisana korekta, poprawny pomiar z pozostawieniem lepszej poprzedniej
+kalibracji, błąd lub przerwanie. Sam kod wyjścia procesu nie potwierdza sukcesu.
+Raport jest zachowany lokalnie w `aimlab_calibration_report.json`, bez wideo.
+Zawiera liczbę przyjętych punktów, pudeł, ponowień obrazu i czas etapu laserowego.
+RMS i maksymalny błąd przed/po dotyczą pięciu punktów kontrolnych niewykorzystanych
+do dopasowania. Przesunięcie X/Y to średnia różnica między nowym i poprzednim
+mapowaniem w 25 zmierzonych pozycjach, w pikselach projektora; dodatnie X oznacza
+prawo, dodatnie Y dół. Podajemy też największą długość tej różnicy. Przy zachowaniu
+poprzedniej kalibracji zastosowane przesunięcie wynosi zero. Korekta perspektywy
+może różnić się w poszczególnych częściach obrazu. Przy odrzuceniu etapu laserowego
+pozostaje wcześniej potwierdzona kalibracja myszy. Raport potwierdza również
+zwolnienie nagrania z pamięci.

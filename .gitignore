@@ -24,3 +24,7 @@ AimLab_IRL.desktop
 PROJECT_STATE.md
 
 .calibration_draft_*.json
+
+aimlab_calibration_report.json
+aimlab_calibration_report.tmp
+aimlab_calibration.previous.json

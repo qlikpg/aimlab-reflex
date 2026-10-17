@@ -89,6 +89,12 @@ class PanelTests(unittest.TestCase):
             self.assertIsNone(self.window.pending)
         self.window.children.clear()
 
+    def test_missing_report_is_not_success(self):
+        with patch.object(panel.Gtk,'MessageDialog'):
+            self.window.show_calibration_report(0)
+        self.assertIn('nieudana',self.window.message)
+        self.assertNotIn('pomyślnie',self.window.message)
+
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)
