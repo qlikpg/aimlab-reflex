@@ -20,8 +20,8 @@ class LoopTests(unittest.TestCase):
                 callback=[]
                 restarts=[0]
                 frames=[0]
-                def factory(config):
-                    game=Game(config)
+                def factory(config, **kwargs):
+                    game=Game(config, **kwargs)
                     games.append(game)
                     return game
                 def wait_key(delay):

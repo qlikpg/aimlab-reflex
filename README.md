@@ -153,3 +153,30 @@ python3 -m unittest discover -s tests -p test_panel.py -v
 ```
 
 Pierwsze polecenie uruchamia testy logiki, zdarzeń, metryk, myszy i renderowania bez kamery/projektora. Opcjonalne testy GTK wymagają systemowego Pythona z GTK3 i sesji graficznej; w innym środowisku są pomijane. Tło i jego paski HUD są przygotowane raz, liczba klatek ograniczona do około 30 FPS. Nie ma nowych zależności ani intensywnych animacji. Kalibracja, detektor i skrypty uruchamiające pozostają bez zmian.
+
+## Rzutki SVG i wygląd celu
+
+W panelu GTK3 pole **Wygląd celu** wybiera pomarańczowy rzutek (domyślny), czarny, pomarańczowo-czarny lub klasyczne niebieskie koło. Wybór zapisuje się w `aimlab_settings.json` pod kluczem `target_style` i jest przekazywany przez `--target-style`. Starszy plik ustawień bez tego pola dostaje domyślny wariant pomarańczowy. **Tryb gry Classic** i **wygląd classic** to niezależne ustawienia: każdy wygląd działa w każdym trybie gry.
+
+```bash
+.venv/bin/python aimlab_training.py --mode gridshot --mouse-test --screen-x 0 --screen-y 0 --target-style orange
+.venv/bin/python aimlab_training.py --mode sixshot --target-style black
+.venv/bin/python aimlab_training.py --mode multishot --target-style orange-black
+.venv/bin/python aimlab_training.py --target-style classic
+```
+
+Źródła grafiki: `assets/targets/clay_target_orange.svg`, `clay_target_black.svg`, `clay_target_orange_black.svg`. Na Linux Mint rasteryzację wykonują systemowe **librsvg2-2** (librsvg ≥ 2.46) i **libcairo2**, wywoływane przez standardowy moduł `ctypes`. Te pakiety są już obecne na laptopie i zostały dodane do instalatora. Nie dodano zależności Pythona ani frameworka GUI. Na innym systemie brak bibliotek powoduje przejście na klasyczny cel.
+
+Przy ładowaniu SVG jest renderowane z antyaliasingiem do RGBA. Przezroczyste marginesy viewBox są odcinane, aby parametr `radius` oznaczał połowę szerokości faktycznej sylwetki, a nie połowę pustego płótna. Docelowa szerokość to `round(2 × radius_po_skalowaniu)` pikseli; wysokość zachowuje proporcje rzutka. Promień referencyjny nadal skaluje się zgodnie z ekranem, tak jak w trybach treningowych.
+
+Wspólne API `TargetAppearance.draw(image, target)` i `TargetAppearance.contains(target, x, y)` w `aimlab_target_styles.py` korzysta z tej samej bitmapy i tego samego zaokrąglonego początku wklejania. Kolory są przeliczane z natywnego, premultiplikowanego ARGB Cairo do RGBA/BGRA OpenCV. Skalowanie i mieszanie premultiplikowanych kolorów zapobiega ciemnym obwódkom. Cache przechowuje maksymalnie osiem rozmiarów; rasteryzacja SVG i skalowanie nie odbywają się w kolejnych klatkach ani po trafieniu w cel o tym samym rozmiarze.
+
+Trafienie SVG wymaga maski alfa ≥ 32/255 w najbliższym pikselu obrazu. Całkowicie przezroczyste narożniki oraz niemal przezroczyste piksele skrajnej krawędzi są wyłączone. Ten próg jest częścią geometrii, nie progiem detektora kamery. Koło zachowuje dotychczasowe piksele rysowania i kolisty obszar trafienia. Rozmieszczanie nadal używa konserwatywnego koła obejmującego rzutek, więc nie ma kolizji ani mniejszego marginesu na HUD.
+
+Brakujący, błędny lub całkowicie przezroczysty SVG powoduje użycie klasycznego koła **zarówno do rysowania, jak i trafień**. Program zapisuje czytelny komunikat z przyczyną do logu i wyświetla `SVG unavailable - classic targets` w oknie treningu. Nie modyfikuje ustawień użytkownika ani plików SVG. Kalibracja, CSV zdarzeń lasera, CSV wyników i definicje pomiarów czasu pozostają niezmienione.
+
+**Kolor lasera:** sprawdzony zielony laser z progami 180/45 nie kolidował z bitmapami tych rzutków w teście cyfrowym. Pomarańczowe elementy mogą natomiast spełniać istniejące progi czerwonego detektora — przy czerwonym laserze wybierz czarny rzutek lub klasyczne niebieskie koło i sprawdź maskę na rzeczywistej projekcji. Detektor nie został zmieniony.
+
+Testy `tests/test_target_styles.py` sprawdzają wszystkie trzy SVG, identyczną geometrię, kolory RGBA/BGR, krawędzie, skalowanie, zgodność maski z pozycją obrazu także dla ułamkowych środków i po przycięciu na brzegu ekranu, brak trafień w narożnikach, cache, restart trybów oraz fallback. Test GTK sprawdza zapis i przekazanie wszystkich czterech wariantów. Lokalny pomiar samego renderera przy 1920×1080 i sześciu celach: mediana około 3,0 ms/klatkę dla kół i 3,5 ms dla rzutków, przy zachowanym limicie około 30 FPS. Nie jest to pomiar opóźnienia ani FPS sprzętowego rzutnika.
+
+Dokumentacja użytych API: [librsvg render_document](https://gnome.pages.gitlab.gnome.org/librsvg/Rsvg-2.0/method.Handle.render_document.html), [formaty obrazu i bufor Cairo](https://www.cairographics.org/manual/cairo-Image-Surfaces.html).

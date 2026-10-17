@@ -46,8 +46,8 @@ class Panel(Gtk.Window):
         grid = Gtk.Grid(column_spacing=18, row_spacing=10)
         box.pack_start(grid, False, False, 0)
         self.fields = {}
-        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
-            if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method'):
+        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
+            if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method', 'target_style'):
                 field = Gtk.ComboBoxText()
             else:
                 low, high = (1,100) if key == 'targets' else ((1,24) if key == 'active_targets' else ((5,300) if key == 'radius' else (0,255)))
@@ -62,6 +62,7 @@ class Panel(Gtk.Window):
         self.fields['color'].set_active_id(self.settings['color'])
         for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]),
                              ('duration', [(str(n),str(n)) for n in (30,60,120)]),
+                             ('target_style', [('orange','Pomarańczowy'),('black','Czarny'),('orange-black','Pomarańczowo-czarny'),('classic','Klasyczny — niebieskie koło')]),
                              ('input_method', [('laser','Kamera i laser'),('mouse','Test myszą — bez kamery')])]:
             for value,label in choices:
                 self.fields[key].append(value,label)
@@ -81,7 +82,7 @@ class Panel(Gtk.Window):
         self.status = Gtk.Label(xalign=0)
         self.status.set_line_wrap(True)
         box.pack_start(self.status, False, False, 0)
-        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nOdstępy i wiek celu obejmują opóźnienia sprzętu. Gaś laser między strzałami.')
+        note = Gtk.Label(xalign=0, label='Kalibracja: kliknij w podglądzie kamery cztery zewnętrzne rogi ramki:\nlewy górny → prawy górny → prawy dolny → lewy dolny.\n\nUstawienia z panelu obowiązują po ponownym uruchomieniu kamery.\nSuwaki maski działają na żywo; „Zapisz ustawienia” zachowa ich wartości.\nOdstępy i wiek celu obejmują opóźnienia sprzętu. Gaś laser między strzałami.\nPrzy czerwonym laserze wybierz czarny cel, jeśli pomarańczowy zakłóca detekcję.')
         note.set_line_wrap(True)
         box.pack_start(note, False, False, 0)
         self.refresh()
@@ -149,7 +150,7 @@ class Panel(Gtk.Window):
         for key, field in self.fields.items():
             if key != 'screen':
                 a[key] = (int(field.get_active_id()) if key == 'duration' else
-                          field.get_active_id() if key in ('camera','color','mode','input_method') else field.get_value_as_int())
+                          field.get_active_id() if key in ('camera','color','mode','input_method','target_style') else field.get_value_as_int())
         if not a['camera']:
             a['camera'] = self.settings['camera']
         state = self.state()
@@ -233,7 +234,7 @@ class Panel(Gtk.Window):
         self.save()
         self.stop_one('projector')
         self.training_input = 'mouse' if mouse else 'laser'
-        self.pending = args+['--mode',mode,'--duration',str(duration),'--active-targets',str(count),
+        self.pending = args+['--mode',mode,'--target-style',self.fields['target_style'].get_active_id(),'--duration',str(duration),'--active-targets',str(count),
                              '--targets',str(self.fields['targets'].get_value_as_int()),'--radius',str(radius)]
         if mouse:
             self.pending.append('--mouse-test')
@@ -275,7 +276,7 @@ class Panel(Gtk.Window):
             if self.training_input == 'mouse' or state.get('calibrated'):
                 try:
                     self.spawn('training','aimlab_training.py',self.pending)
-                    self.message = ('Test myszą: klikaj niebieskie cele.' if self.training_input == 'mouse' else 'Trening trwa. Celuj w niebieskie cele i gaś laser między strzałami.')
+                    self.message = ('Test myszą: klikaj cele.' if self.training_input == 'mouse' else 'Trening trwa. Celuj w cele i gaś laser między strzałami.')
                 except (OSError, RuntimeError) as error:
                     self.message = str(error)
             self.pending = None

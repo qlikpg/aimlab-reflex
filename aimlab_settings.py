@@ -1,8 +1,11 @@
 """Pure settings migration; importable without GTK or camera dependencies."""
 from aimlab_game_modes import MODES
 
+# Keep settings independent of OpenCV, NumPy and native SVG rendering.
+TARGET_STYLES = ('orange','black','orange-black','classic')
+
 DEFAULTS = {'camera':'/dev/video2','color':'green','minimum':180,'delta':45,'targets':10,
-            'radius':70,'mode':'classic','duration':60,'active_targets':1,'input_method':'laser'}
+            'radius':70,'mode':'classic','duration':60,'active_targets':1,'input_method':'laser','target_style':'orange'}
 
 
 def migrate_settings(data):
@@ -11,7 +14,7 @@ def migrate_settings(data):
         return values
     if isinstance(data.get('camera'),str):
         values['camera'] = data['camera']
-    for key,choices in [('color',('green','red')),('mode',MODES),('input_method',('laser','mouse'))]:
+    for key,choices in [('color',('green','red')),('mode',MODES),('input_method',('laser','mouse')),('target_style',TARGET_STYLES)]:
         if isinstance(data.get(key),str) and data[key] in choices:
             values[key] = data[key]
     preset = MODES[values['mode']]
