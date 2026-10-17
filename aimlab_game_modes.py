@@ -54,9 +54,14 @@ class Shot:
     source: str
 
 
+def circle_contains(target,x,y):
+    return math.hypot(x-target.x,y-target.y) <= target.radius+1e-7
+
+
 class Game:
-    def __init__(self, config=Config(), rng=None):
+    def __init__(self, config=Config(), rng=None, hit_test=None):
         self.config = config
+        self.hit_test = hit_test if hit_test is not None else circle_contains
         if config.mode not in MODES:
             raise ValueError('Unknown game mode')
         self.mode = MODES[config.mode]
@@ -125,7 +130,7 @@ class Game:
 
     def start(self, now):
         # A fresh engine also clears IDs, counters, intervals and pending activations.
-        fresh = Game(self.config, self.rng)
+        fresh = Game(self.config, self.rng, self.hit_test)
         self.__dict__.update(fresh.__dict__)
         self.started_at = now
         self.state = 'running'
@@ -168,11 +173,11 @@ class Game:
         x,y = u*(self.config.width-1), v*(self.config.height-1)
         eligible = [t for t in self.targets if t.active and t.activated_at is not None and stamp >= t.activated_at]
         # Events over a new, not-yet-presented target must not count as hits OR misses.
-        if any(t.active and t not in eligible and math.hypot(x-t.x,y-t.y) <= t.radius for t in self.targets):
+        if any(t.active and t not in eligible and self.hit_test(t,x,y) for t in self.targets):
             return None
         if not eligible:
             return None
-        matches = [t for t in eligible if math.hypot(x-t.x,y-t.y) <= t.radius+1e-7]
+        matches = [t for t in eligible if self.hit_test(t,x,y)]
         target = min(matches or eligible, key=lambda t: (math.hypot(x-t.x,y-t.y),t.id))
         error = math.hypot(x-target.x,y-target.y)
         shot = Shot(stamp, 'hit' if matches else 'miss', target, x, y, error,

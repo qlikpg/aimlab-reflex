@@ -49,6 +49,18 @@ class PanelTests(unittest.TestCase):
             self.assertIn('sixshot',args)
             self.assertIn('--active-targets',args)
 
+    def test_target_style_is_saved_and_sent_to_training(self):
+        self.assertEqual(self.window.fields['target_style'].get_active_id(),'orange')
+        self.window.fields['input_method'].set_active_id('mouse')
+        for style in ('orange','black','orange-black','classic'):
+            self.window.fields['target_style'].set_active_id(style)
+            with patch.object(self.window,'spawn') as spawn:
+                self.window.train()
+                self.window.poll()
+                args=spawn.call_args.args[2]
+                self.assertEqual(args[args.index('--target-style')+1],style)
+            self.assertEqual(panel.load_settings()['target_style'],style)
+
     def test_save_new_and_load_old_settings(self):
         self.window.fields['mode'].set_active_id('multishot')
         self.window.fields['duration'].set_active_id('120')

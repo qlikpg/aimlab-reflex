@@ -15,7 +15,8 @@ from pathlib import Path
 import cv2
 import numpy as np
 
-from aimlab_game_modes import Config, Game, MODES
+from aimlab_game_modes import Config, Game, MODES, Target
+from aimlab_target_styles import TargetAppearance, STYLES, draw_classic
 
 DEFAULT_BACKGROUND = Path(__file__).resolve().parent / 'assets' / 'meadow.png'
 
@@ -35,11 +36,8 @@ def load_background(path, width, height):
 
 
 def draw_target(image, target, radius):
-    # Dark outer rim stays visible against bright clouds and the white inner rim.
-    cv2.circle(image, target, radius+4, (15, 15, 15), -1)
-    cv2.circle(image, target, radius, (220, 0, 0), -1)
-    cv2.circle(image, target, radius, (255, 255, 255), 3)
-    cv2.drawMarker(image, target, (255, 255, 255), cv2.MARKER_CROSS, 22, 2)
+    # Compatibility wrapper for the original circular renderer.
+    draw_classic(image,Target(0,target[0],target[1],radius))
 
 
 class HitReader:
@@ -178,6 +176,7 @@ def arguments():
     p.add_argument('--radius',type=float,default=None,help='Radius at reference 1920x1080; scales with screen')
     p.add_argument('--targets',type=int,default=10,help='Classic completion count')
     p.add_argument('--mode',choices=tuple(MODES),default='classic')
+    p.add_argument('--target-style',choices=tuple(STYLES),default='orange')
     p.add_argument('--duration',type=float,default=60)
     p.add_argument('--active-targets',type=int,default=None)
     p.add_argument('--mouse-test',action='store_true')
@@ -198,11 +197,13 @@ def config_from_args(a):
                   active_count=a.active_targets,classic_total=a.targets)
 
 
-def render_frame(base, game, now, ready_at, feedback='', finished_reason='finished'):
+def render_frame(base, game, now, ready_at, feedback='', finished_reason='finished', appearance=None):
     image = base.copy()
     h,w = image.shape[:2]
     scale = max(.4,min(w/1920,h/1080))
     metrics = game.metrics(now)
+    if appearance is not None and appearance.warning:
+        feedback = (feedback+' | ' if feedback else '')+'SVG unavailable - classic targets'
     def text(line,x,y,size=1,color=(255,255,255)):
         cv2.putText(image,line,(int(x),int(y)),cv2.FONT_HERSHEY_SIMPLEX,size*scale,color,max(1,round(2*scale)))
     remaining = game.remaining(now)
@@ -212,7 +213,10 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
     if game.state == 'running':
         for target in game.targets:
             if target.active:
-                draw_target(image,(round(target.x),round(target.y)),round(target.radius))
+                if appearance is None:
+                    draw_target(image,(round(target.x),round(target.y)),round(target.radius))
+                else:
+                    appearance.draw(image,target)
         if feedback:
             text(feedback,20*scale,85*scale,.75)
     elif game.state == 'finished':
@@ -249,7 +253,11 @@ def main():
     base[-bottom:] = (base[-bottom:].astype(np.float32)*.3).astype(np.uint8)
     reader = None if a.mouse_test else HitReader(a.hits)
     mouse = MouseInput(a.width,a.height)
-    game = Game(config)
+    appearance = TargetAppearance(a.target_style,fallback=True)
+    game = Game(config,hit_test=appearance.contains)
+    appearance.prepare(game.radius)
+    if appearance.warning:
+        print('UWAGA: '+appearance.warning+' Używam klasycznego celu.',flush=True)
     name = 'AimLab IRL - Training'
     output = a.hits.parent/f'aimlab_training_{time.time_ns()}.csv'
     output.parent.mkdir(parents=True,exist_ok=True)
@@ -293,7 +301,7 @@ def main():
             if game.state == 'finished' and not summary_written:
                 results.write(game,ordinal,session_id,now,reason=reason)
                 summary_written = True
-            cv2.imshow(name,render_frame(base,game,now,ready_at,feedback if now<feedback_until else '',reason))
+            cv2.imshow(name,render_frame(base,game,now,ready_at,feedback if now<feedback_until else '',reason,appearance))
             delay = max(1,round((frame_start+1/30-time.monotonic())*1000))
             key = cv2.waitKey(delay)&0xff
             game.presented(time.monotonic())
@@ -304,7 +312,7 @@ def main():
                     game.finish(time.monotonic())
                 if game.started_at is not None and not summary_written:
                     results.write(game,ordinal,session_id,time.monotonic(),reason='restarted')
-                game = Game(config)
+                game = Game(config,hit_test=appearance.contains)
                 ordinal += 1
                 session_id = uuid.uuid4().hex
                 ready_at = time.monotonic()+3
