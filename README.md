@@ -196,3 +196,32 @@ Domyślnie: 60 s, promień 70 px przy 1920×1080, jeden aktywny cel; czas i prom
 ```bash
 .venv/bin/python aimlab_training.py --mode trap-spidershot --target-style orange --mouse-test --screen-x 0 --screen-y 0
 ```
+
+### Podgląd maski na tle i pomiar błędu kalibracji
+
+„Podgląd i maska” pokazuje teraz obraz kamery z maską zaznaczoną na magenta.
+Klawisz **B** przełącza ten widok na dotychczasową maskę binarną. Suwaki
+progów działają jak wcześniej. Podgląd nie zmienia detektora ani kalibracji.
+
+Po zapisanej kalibracji kliknij **STOP**, następnie **Pomiar błędu**.
+Na wybranym ekranie pojawi się tło łąki z białym krzyżykiem. Wyłącz laser
+i kliknij dokładnie środek tego krzyżyka w oknie kamery **AimLab IRL**.
+Powtórz dla dziewięciu kolejnych punktów. Nie klikaj obrazu na projektorze.
+Program przelicza kliknięcie istniejącą homografią i porównuje je ze znaną
+pozycją krzyżyka. Wyniki są w pikselach wybranego ekranu projektora:
+
+- `dx_px`, `dy_px`: pozycja wyliczona minus rzeczywista pozycja krzyżyka;
+  dodatnie wartości oznaczają przesunięcie w prawo / w dół.
+- `error_px`: odległość między tymi pozycjami.
+- RMS: pierwiastek średniej kwadratów odległości z dotychczasowych punktów.
+- max: największa zmierzona odległość.
+
+Wynik obejmuje dokładność wskazania myszą i obrazowania kamery. To pomiar
+niezależnych punktów kontrolnych, bez automatycznej korekty kalibracji.
+**N** zaczyna nową serię; **Q/Esc** lub STOP kończy pomiar. Próbki z czasem UTC
+są dopisywane do `aimlab_calibration_check.csv` (osobno od zdarzeń lasera).
+Po dziewiątej próbce podsumowanie pozostaje w oknie kamery.
+
+CLI kamery: `--check-calibration --projector-width 1920 --projector-height 1080
+--screen-x 1920 --screen-y 0 --show-mask` wraz z dotychczasowymi argumentami
+kamery i progów. Wymiary odnoszą się do aktualnego trybu wyświetlania.

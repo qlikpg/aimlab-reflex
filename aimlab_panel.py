@@ -70,7 +70,7 @@ class Panel(Gtk.Window):
         self.fields['mode'].connect('changed',self.mode_changed)
         self.fields['input_method'].connect('changed',self.input_changed)
         self.buttons = []
-        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Start treningu',self.train), ('STOP',self.stop)]]:
+        for labels in [[('Odśwież urządzenia',self.refresh), ('Zapisz ustawienia',self.save)], [('Podgląd i maska',self.preview), ('Kalibracja',self.calibrate), ('Pomiar błędu',self.check_calibration), ('Start treningu',self.train), ('STOP',self.stop)]]:
             row = Gtk.Box(spacing=8)
             box.pack_start(row, False, False, 0)
             for label, callback in labels:
@@ -173,9 +173,9 @@ class Panel(Gtk.Window):
             raise RuntimeError('Brak środowiska projektu. Uruchom instalator.')
         self.children[name] = subprocess.Popen([str(python),'-u',str(ROOT/script),*args],cwd=ROOT,stdout=self.log,stderr=self.log)
 
-    def start_camera(self, calibration=False):
+    def start_camera(self, calibration=False, extra_args=None):
         if self.running('camera'):
-            if calibration:
+            if calibration or extra_args:
                 raise RuntimeError('Kliknij STOP, potem Kalibracja — rogi będą gotowe do wskazania.')
             return
         camera = self.fields['camera'].get_active_id()
@@ -186,6 +186,7 @@ class Panel(Gtk.Window):
         args = ['--camera',camera,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--show-mask','--status-file',str(self.state_path)]
         if calibration:
             args.append('--start-calibration')
+        args.extend(extra_args or [])
         self.spawn('camera','aimlab_irl_camera_mvp.py',args)
 
     def screen_args(self):
@@ -205,6 +206,15 @@ class Panel(Gtk.Window):
     def preview(self):
         self.start_camera()
         self.message = 'Podgląd uruchomiony. Maska ma suwaki czułości.'
+
+    def check_calibration(self):
+        if any(self.running(name) for name in ('camera','training','projector')):
+            raise RuntimeError('Kliknij STOP przed pomiarem błędu.')
+        args = self.screen_args()
+        args[0] = '--projector-width'
+        args[2] = '--projector-height'
+        self.start_camera(extra_args=['--check-calibration', *args])
+        self.message = 'Laser wyłączony: klikaj środek białego krzyżyka w oknie AimLab IRL. Wynik w pikselach rzutnika; N powtarza pomiar.'
 
     def calibrate(self):
         if self.running('training'):

@@ -11,6 +11,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from aimlab_diagnostics import mask_overlay, CalibrationCheck
 
 
 def arguments():
@@ -24,6 +25,11 @@ def arguments():
     p.add_argument('--green-min', type=int, default=210)
     p.add_argument('--green-delta', type=int, default=65)
     p.add_argument('--show-mask', action='store_true', help='Open laser mask with sensitivity controls')
+    p.add_argument('--check-calibration', action='store_true')
+    p.add_argument('--projector-width', type=int, default=1920)
+    p.add_argument('--projector-height', type=int, default=1080)
+    p.add_argument('--screen-x', type=int, default=1920)
+    p.add_argument('--screen-y', type=int, default=0)
     p.add_argument('--start-calibration', action='store_true')
     p.add_argument('--status-file', type=Path, help='Live state for the desktop panel')
     p.add_argument('--min-area', type=int, default=2)
@@ -37,6 +43,8 @@ def arguments():
         p.error('Color thresholds must be between 0 and 255')
     if min(a.width, a.height, a.min_area) <= 0 or a.max_area < a.min_area or a.release_ms < 0:
         p.error('Invalid dimensions, area limits, or release time')
+    if min(a.projector_width, a.projector_height) < 2:
+        p.error('Invalid projector dimensions')
     return a
 
 
@@ -83,6 +91,15 @@ def main():
     frames = 0
     last_status = 0
     last_hit = 'No hits yet'
+    check = CalibrationCheck(a.projector_width, a.projector_height) if a.check_calibration else None
+    raw_mask = False
+    if check:
+        from aimlab_training import load_background
+        background = load_background(Path(__file__).parent/'assets/meadow.png', check.width, check.height)
+        cv2.namedWindow('Calibration check', cv2.WINDOW_NORMAL)
+        cv2.moveWindow('Calibration check', a.screen_x, a.screen_y)
+        cv2.setWindowProperty('Calibration check', cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
+        check_image = check.draw(background)
 
     def open_mask():
         cv2.namedWindow('Laser mask', cv2.WINDOW_AUTOSIZE)
@@ -93,8 +110,24 @@ def main():
                           lambda value: setattr(a, color + '_delta', value))
 
     def click(event, x, y, flags, userdata):
-        nonlocal matrix, calibrating, points
-        if event != cv2.EVENT_LBUTTONDOWN or not calibrating:
+        nonlocal matrix, calibrating, points, check_image
+        if event != cv2.EVENT_LBUTTONDOWN:
+            return
+        if check and not calibrating:
+            if matrix is not None:
+                sample = check.record(matrix, (x,y))
+                if sample:
+                    path = a.output.parent/'aimlab_calibration_check.csv'
+                    exists = path.exists() and path.stat().st_size > 0
+                    with path.open('a', newline='', encoding='utf-8') as report:
+                        writer = csv.writer(report)
+                        if not exists:
+                            writer.writerow(['utc','point','expected_x','expected_y','camera_x','camera_y','dx_px','dy_px','error_px'])
+                        writer.writerow([datetime.now(timezone.utc).isoformat(), *sample])
+                    check_image = check.draw(background)
+                    print(check.summary(), flush=True)
+            return
+        if not calibrating:
             return
         points.append((x, y))
         if len(points) == 4:
@@ -153,6 +186,7 @@ def main():
                     last_status = now
                 frames += 1
                 mask, spot = detect(frame, a)
+                overlay = mask_overlay(frame, mask) if show_mask else None
                 if spot is None:
                     if absent_since is None:
                         absent_since = now
@@ -179,13 +213,22 @@ def main():
                 status += f' | min={getattr(a, a.laser_color + "_min")} delta={getattr(a, a.laser_color + "_delta")}'
                 for i, line in enumerate([status, last_hit, 'C calibrate | R reset | M mask | S screenshot | I info | Q quit']):
                     cv2.putText(frame, line, (12, 28 + i * 26), cv2.FONT_HERSHEY_SIMPLEX, .55, (0, 255, 255), 1)
+                if check:
+                    cv2.putText(frame, check.summary() if matrix is not None else 'No calibration - close check and calibrate first', (12,110), cv2.FONT_HERSHEY_SIMPLEX, .5, (255,255,255), 1)
+                    cv2.imshow('Calibration check', check_image)
                 cv2.imshow('AimLab IRL', frame)
                 if show_mask:
-                    cv2.imshow('Laser mask', mask)
+                    cv2.putText(overlay, 'B: binary / overlay | magenta: mask', (12,28), cv2.FONT_HERSHEY_SIMPLEX, .6, (255,255,255), 1)
+                    cv2.imshow('Laser mask', mask if raw_mask else overlay)
                 key = cv2.waitKey(1) & 0xff
                 if key in (27, ord('q')) or cv2.getWindowProperty('AimLab IRL', cv2.WND_PROP_VISIBLE) < 1:
                     break
-                if key == ord('c'):
+                if key == ord('b'):
+                    raw_mask = not raw_mask
+                elif key == ord('n') and check:
+                    check.samples.clear()
+                    check_image = check.draw(background)
+                elif key == ord('c'):
                     points, matrix, calibrating, armed = [], None, True, False
                 elif key == ord('r'):
                     points, matrix, calibrating = [], None, False
