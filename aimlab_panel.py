@@ -185,7 +185,7 @@ class Panel(Gtk.Window):
             raise RuntimeError('Brak środowiska projektu. Uruchom instalator.')
         self.children[name] = subprocess.Popen([str(python),'-u',str(ROOT/script),*args],cwd=ROOT,stdout=self.log,stderr=self.log)
 
-    def start_camera(self, calibration=False, extra_args=None):
+    def start_camera(self, calibration=False, extra_args=None, show_mask=False):
         if self.running('camera'):
             if calibration or extra_args:
                 raise RuntimeError('Kliknij STOP, potem Kalibracja — rogi będą gotowe do wskazania.')
@@ -195,7 +195,9 @@ class Panel(Gtk.Window):
             raise RuntimeError('Podłącz kamerę i wybierz ją na liście.')
         self.save()
         a = self.settings
-        args = ['--camera',camera,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--show-mask','--status-file',str(self.state_path)]
+        args = ['--camera',camera,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--status-file',str(self.state_path)]
+        if show_mask or '--laser-test' in (extra_args or []):
+            args.append('--show-mask')
         if calibration:
             args.append('--start-calibration')
         args.extend(extra_args or [])
@@ -242,7 +244,7 @@ class Panel(Gtk.Window):
         self.message = 'Przygotowuję test wykrywania lasera…'
 
     def preview(self):
-        self.start_camera()
+        self.start_camera(show_mask=True)
         self.message = 'Podgląd uruchomiony. Maska ma suwaki czułości.'
 
     def video_calibration(self):

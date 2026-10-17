@@ -317,3 +317,5 @@ zachowa je na następne uruchomienie. Ustawienia ekspozycji otworzysz przyciskie
 **N** zeruje licznik, kliknięcie zmienia pole, **Q/Esc** lub STOP kończy test.
 CLI kamery: `--laser-test --show-mask`. Panel można uruchomić od razu w teście:
 `python3 aimlab_panel.py --laser-test`.
+
+Podczas kalibracji i startu treningu maska nie otwiera się automatycznie. Jest domyślnie włączana tylko przez „Podgląd i maska” oraz „Test wykrywania lasera”. W oknie kamery klawisz M przełącza maskę ręcznie.
