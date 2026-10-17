@@ -223,7 +223,7 @@ class Panel(Gtk.Window):
             raise RuntimeError('Najpierw uruchom kamerę i wykonaj kalibrację. Poczekaj na status „gotowa”.')
         mode = self.fields['mode'].get_active_id()
         radius = self.fields['radius'].get_value_as_int()
-        count = self.fields['active_targets'].get_value_as_int() if mode not in ('classic','spidershot') else 1
+        count = self.fields['active_targets'].get_value_as_int() if mode not in ('classic','spidershot','trap-spidershot') else 1
         w,h = self.screens[int(self.fields['screen'].get_active_id())][:2]
         duration = int(self.fields['duration'].get_active_id())
         try:
@@ -294,7 +294,7 @@ class Panel(Gtk.Window):
                 enabled = False
             if key == 'targets' and mode != 'classic':
                 enabled = False
-            if key == 'active_targets' and mode in ('classic','spidershot'):
+            if key == 'active_targets' and mode in ('classic','spidershot','trap-spidershot'):
                 enabled = False
             field.set_sensitive(enabled)
         if self.closing and not self.children:

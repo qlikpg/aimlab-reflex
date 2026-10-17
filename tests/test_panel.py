@@ -27,14 +27,14 @@ class PanelTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_mode_defaults_and_control_sensitivity(self):
-        for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('classic',70,1)]:
+        for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)
             self.window.poll()
             self.assertEqual(self.window.fields['radius'].get_value_as_int(),radius)
             self.assertEqual(self.window.fields['active_targets'].get_value_as_int(),count)
             self.assertEqual(self.window.fields['duration'].get_sensitive(),name!='classic')
             self.assertEqual(self.window.fields['targets'].get_sensitive(),name=='classic')
-            self.assertEqual(self.window.fields['active_targets'].get_sensitive(),name not in ('classic','spidershot'))
+            self.assertEqual(self.window.fields['active_targets'].get_sensitive(),name not in ('classic','spidershot','trap-spidershot'))
 
     def test_mouse_start_does_not_require_camera(self):
         self.window.fields['input_method'].set_active_id('mouse')
@@ -48,6 +48,20 @@ class PanelTests(unittest.TestCase):
             self.assertIn('--mouse-test',args)
             self.assertIn('sixshot',args)
             self.assertIn('--active-targets',args)
+
+    def test_trap_mode_keeps_selected_side_appearance(self):
+        self.window.fields['input_method'].set_active_id('mouse')
+        self.window.fields['target_style'].set_active_id('black')
+        self.window.fields['mode'].set_active_id('trap-spidershot')
+        self.window.poll()
+        self.assertEqual(self.window.fields['target_style'].get_active_id(),'black')
+        self.assertFalse(self.window.fields['active_targets'].get_sensitive())
+        with patch.object(self.window,'spawn') as spawn:
+            self.window.train()
+            self.window.poll()
+            args=spawn.call_args.args[2]
+            self.assertEqual(args[args.index('--mode')+1],'trap-spidershot')
+            self.assertEqual(args[args.index('--target-style')+1],'black')
 
     def test_target_style_is_saved_and_sent_to_training(self):
         self.assertEqual(self.window.fields['target_style'].get_active_id(),'orange')
