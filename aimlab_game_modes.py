@@ -17,6 +17,7 @@ MODES = {
     'sixshot': Mode('Sixshot', 30, 6),
     'multishot': Mode('Multishot', 55, 5),
     'spidershot': Mode('Spidershot', 70, 1),
+    'trap-spidershot': Mode('Trap-spidershot', 70, 1),
 }
 
 
@@ -29,6 +30,7 @@ class Target:
     activated_at: float | None = None
     active: bool = True
     role: str = 'normal'
+    style: str | None = None  # Optional per-target appearance override.
 
 
 @dataclass(frozen=True)
@@ -76,8 +78,8 @@ class Game:
         self.count = self.mode.count if config.active_count is None else config.active_count
         if type(self.count) is not int or not 1 <= self.count <= 24:
             raise ValueError('Active target count must be between 1 and 24')
-        if config.mode in ('classic', 'spidershot') and self.count != 1:
-            raise ValueError('Classic and Spidershot have exactly one active target')
+        if config.mode in ('classic', 'spidershot', 'trap-spidershot') and self.count != 1:
+            raise ValueError('Classic, Spidershot and Trap-spidershot have exactly one active target')
         self.rng = rng if rng is not None else random.Random()
         # Include target outlines, HUD strips and a minimum gap between visible circles.
         rim = 6
@@ -96,8 +98,13 @@ class Game:
         if len(self.slots) < self.count:
             raise ValueError(f'Cannot place {self.count} non-overlapping targets: increase space or decrease radius')
         self.center = ((config.width-1)/2, (config.height-1)/2)
+        if config.mode == 'trap-spidershot':
+            # The active blue circle is tangent to the last projector pixel row.
+            self.center = ((config.width-1)/2, config.height-1-self.radius)
         self.sides = [p for p in self.slots if math.dist(p, self.center) >= 2*self.radius+max(12,18*self.scale)]
-        if config.mode == 'spidershot' and (not self.sides or not (left <= self.center[0] <= right and top <= self.center[1] <= bottom)):
+        if (config.mode in ('spidershot','trap-spidershot')
+                and (not self.sides or (config.mode == 'spidershot'
+                     and not (left <= self.center[0] <= right and top <= self.center[1] <= bottom)))):
             raise ValueError('Too little space for center and side targets: decrease radius')
         self.targets = []
         self.started_at = None
@@ -115,7 +122,8 @@ class Game:
         self.state = 'idle'
 
     def _target(self, point, role='normal'):
-        target = Target(self.next_id, *point, self.radius, role=role)
+        style = 'classic' if self.config.mode == 'trap-spidershot' and role == 'center' else None
+        target = Target(self.next_id, *point, self.radius, role=role, style=style)
         self.next_id += 1
         self.targets.append(target)
         return target
@@ -134,7 +142,7 @@ class Game:
         self.__dict__.update(fresh.__dict__)
         self.started_at = now
         self.state = 'running'
-        if self.config.mode == 'spidershot':
+        if self.config.mode in ('spidershot','trap-spidershot'):
             self._target(self.center, 'center')
         else:
             for _ in range(self.count):
@@ -196,7 +204,7 @@ class Game:
                 self.finish(now)
             else:
                 self.next_ready = now+.6
-        elif mode == 'spidershot':
+        elif mode in ('spidershot','trap-spidershot'):
             if target.role == 'center':
                 if self.last_side_hit is not None:
                     self.returns.append((stamp-self.last_side_hit)*1000)

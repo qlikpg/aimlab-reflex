@@ -24,6 +24,6 @@ def migrate_settings(data):
             values[key] = data[key]
     if type(data.get('duration')) is int and data['duration'] in (30,60,120):
         values['duration'] = data['duration']
-    if values['mode'] in ('classic','spidershot'):
+    if values['mode'] in ('classic','spidershot','trap-spidershot'):
         values['active_targets'] = 1
     return values

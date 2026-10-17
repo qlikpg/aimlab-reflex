@@ -209,7 +209,8 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
     remaining = game.remaining(now)
     clock = f'{remaining:.1f}s' if remaining is not None else f'{game.hits}/{game.config.classic_total}'
     text(f'{game.mode.name} | {clock} | Hits: {game.hits} | Misses: {game.misses} | Accuracy: {metrics["accuracy_percent"]:.1f}%',20*scale,45*scale)
-    text('Q / Esc: exit | SPACE: restart | Release laser between shots',20*scale,h-24*scale,.75)
+    footer_y = 110*scale if game.config.mode == 'trap-spidershot' else h-24*scale
+    text('Q / Esc: exit | SPACE: restart | Release laser between shots',20*scale,footer_y,.65 if game.config.mode == 'trap-spidershot' else .75)
     if game.state == 'running':
         for target in game.targets:
             if target.active:
@@ -226,7 +227,7 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
         lines = [f'SESSION: {finished_reason}', f'Hits: {game.hits} | Misses: {game.misses} | Accuracy: {metrics["accuracy_percent"]:.1f}%',
                  f'Duration: {metrics["duration_s"]:.1f}s | Hits/s: {metrics["hits_per_second"]:.2f}',
                  f'Mean hit interval: {number(metrics["mean_hit_interval_ms"])} ms']
-        if game.config.mode == 'spidershot':
+        if game.config.mode in ('spidershot','trap-spidershot'):
             lines += [f'Center > side: {number(metrics["mean_center_to_side_ms"])} ms | Return: {number(metrics["mean_return_to_center_ms"])} ms',f'Full cycles: {game.cycles}']
         lines += ['SPACE: new session','Intervals include camera and projector latency']
         for i,line in enumerate(lines):
@@ -250,7 +251,8 @@ def main():
     # Precompute static HUD shading once, not on every frame.
     top,bottom = max(60,round(120*scale)),max(38,round(80*scale))
     base[:top] = (base[:top].astype(np.float32)*.3).astype(np.uint8)
-    base[-bottom:] = (base[-bottom:].astype(np.float32)*.3).astype(np.uint8)
+    if a.mode != 'trap-spidershot':
+        base[-bottom:] = (base[-bottom:].astype(np.float32)*.3).astype(np.uint8)
     reader = None if a.mouse_test else HitReader(a.hits)
     mouse = MouseInput(a.width,a.height)
     appearance = TargetAppearance(a.target_style,fallback=True)

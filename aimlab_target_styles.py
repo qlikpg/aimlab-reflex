@@ -200,7 +200,7 @@ class TargetAppearance:
         return sprite
 
     def draw(self,image,target):
-        if self.style == 'classic':
+        if self.style == 'classic' or target.style == 'classic':
             draw_classic(image,target)
             return
         sprite = self.prepare(target.radius)
@@ -217,7 +217,7 @@ class TargetAppearance:
         destination[:] = np.clip(np.rint(blended),0,255).astype(np.uint8)
 
     def contains(self,target,x,y):
-        if self.style == 'classic':
+        if self.style == 'classic' or target.style == 'classic':
             return math.hypot(x-target.x,y-target.y) <= target.radius+1e-7
         sprite = self.prepare(target.radius)
         left,top = sprite.origin(target)

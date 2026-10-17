@@ -103,6 +103,7 @@ W panelu GTK3 wybierz **Tryb treningu**, **Czas sesji** i metodę sterowania. Zm
 | Sixshot | 6 | 30 px | domyślnie 60 s |
 | Multishot | 5 | 55 px | domyślnie 60 s |
 | Spidershot | 1, naprzemiennie środek/bok | 70 px | domyślnie 60 s |
+| Trap-spidershot | 1, naprzemiennie baza przy dolnej krawędzi / losowy cel | 70 px | domyślnie 60 s |
 
 Panel pozwala wybrać 30, 60 lub 120 sekund. Gridshot, Sixshot i Multishot pozwalają też zmienić liczbę aktywnych celów (1–24). Spidershot i Classic zawsze pokazują jeden. Promień podawany jest w pikselach referencyjnych 1920×1080, skalowanych współczynnikiem `min(szerokość/1920, wysokość/1080)`. W Sixshot można zwiększyć promień, jeśli dokładność kamery lub projektora jest ograniczona.
 
@@ -180,3 +181,18 @@ Brakujący, błędny lub całkowicie przezroczysty SVG powoduje użycie klasyczn
 Testy `tests/test_target_styles.py` sprawdzają wszystkie trzy SVG, identyczną geometrię, kolory RGBA/BGR, krawędzie, skalowanie, zgodność maski z pozycją obrazu także dla ułamkowych środków i po przycięciu na brzegu ekranu, brak trafień w narożnikach, cache, restart trybów oraz fallback. Test GTK sprawdza zapis i przekazanie wszystkich czterech wariantów. Lokalny pomiar samego renderera przy 1920×1080 i sześciu celach: mediana około 3,0 ms/klatkę dla kół i 3,5 ms dla rzutków, przy zachowanym limicie około 30 FPS. Nie jest to pomiar opóźnienia ani FPS sprzętowego rzutnika.
 
 Dokumentacja użytych API: [librsvg render_document](https://gnome.pages.gitlab.gnome.org/librsvg/Rsvg-2.0/method.Handle.render_document.html), [formaty obrazu i bufor Cairo](https://www.cairographics.org/manual/cairo-Image-Surfaces.html).
+
+## Trap-spidershot
+
+Nowy tryb zachowuje naprzemienną sekwencję Spidershot, ale rozdziela dwa rodzaje celów:
+
+1. **Baza:** zawsze klasyczne niebieskie koło, niezależnie od pola „Wygląd celu”. Środek ma `x=(szerokość−1)/2`, `y=wysokość−1−promień`. Dolna krawędź aktywnego koła dotyka ostatniego wiersza projekcji; ozdobna obwódka jest przycinana do ekranu. Promień nadal skaluje się z rozdzielczością.
+2. Po trafieniu bazy pojawia się **losowy cel w wybranym przez użytkownika wyglądzie**, z taką samą metodą losowania i marginesami jak w Spidershot. Po trafieniu wraca baza. Pozycja losowa jest odsunięta od bazy, powyżej niej; kierunek i odległość zmieniają się. Cele pozostają nieruchome.
+
+W panelu wybierz **Trap-spidershot** oraz wygląd rzutka. Zmiana trybu nie zmienia Twojego wyboru wyglądu; dotyczy on tylko celu losowego. Niebieska baza ma kolisty obszar trafienia, a rzutek wybraną maskę alfa. Gdy wybrany jest wygląd klasyczny, oba cele są niebieskimi kołami.
+
+Domyślnie: 60 s, promień 70 px przy 1920×1080, jeden aktywny cel; czas i promień są konfigurowalne. Statystyki środek→bok, powrót i pełne cykle działają jak w Spidershot, przy czym „środek” oznacza teraz bazę przy dolnej krawędzi. Instrukcje klawiszy przeniesiono na górę, aby nie zasłaniały bazy. Detekcja impulsów, kalibracja, wyniki i reguły czasu pozostają niezmienione.
+
+```bash
+.venv/bin/python aimlab_training.py --mode trap-spidershot --target-style orange --mouse-test --screen-x 0 --screen-y 0
+```
