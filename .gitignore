@@ -1,0 +1,24 @@
+# Local Python environment
+.venv/
+__pycache__/
+*.py[cod]
+
+# Hardware calibration, user preferences and runtime state
+aimlab_calibration.json
+aimlab_settings.json
+.camera_status_*.json
+.camera_status_*.tmp
+.aimlab_camera_*.json
+.aimlab_camera_*.tmp
+.aimlab_panel.lock
+
+# Session results, logs, screenshots and export bundles
+*.csv
+*.log
+aimlab_*.png
+training_landscape_preview.png
+AimLab_IRL*.zip
+AimLab_IRL_CHATGPT.txt
+AimLab_IRL_manifest.json
+AimLab_IRL.desktop
+PROJECT_STATE.md
