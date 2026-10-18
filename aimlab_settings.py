@@ -5,7 +5,7 @@ from aimlab_game_modes import MODES
 TARGET_STYLES = ('orange','black','orange-black','classic')
 
 DEFAULTS = {'camera':'/dev/video2','color':'green','minimum':180,'delta':45,'targets':10,
-            'radius':70,'mode':'classic','duration':60,'active_targets':1,'input_method':'laser','target_style':'orange','background_style':'meadow'}
+            'radius':70,'mode':'classic','duration':60,'active_targets':1,'input_method':'laser','target_style':'orange','background_style':'meadow','local_contrast':8}
 
 
 def migrate_settings(data):
@@ -19,7 +19,7 @@ def migrate_settings(data):
             values[key] = data[key]
     preset = MODES.get(values['mode'],MODES['classic'])
     values.update(radius=preset.radius,active_targets=preset.count)
-    for key,low,high in [('minimum',0,255),('delta',0,255),('targets',1,100),('radius',5,300),('active_targets',1,24)]:
+    for key,low,high in [('local_contrast',0,100),('minimum',0,255),('delta',0,255),('targets',1,100),('radius',5,300),('active_targets',1,24)]:
         if type(data.get(key)) is int and low <= data[key] <= high:
             values[key] = data[key]
     if type(data.get('duration')) is int and data['duration'] in (30,60,120):

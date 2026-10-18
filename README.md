@@ -334,3 +334,24 @@ Porównaj tę samą pozycję i laser na czarnym oraz białym tle. Przy ręcznej 
 porównanie będzie mniej zależne od automatycznych zmian jasności kamery. Patrz
 zarówno na jasność plamki, jak i przewagę koloru: jasna, prześwietlona do bieli
 plamka może nie spełniać progu koloru. STOP zamyka kamerę i planszę testową.
+
+### Nierówne wykrywanie na ścianie: kontrast lokalny i pomiary
+
+Detektor poza jasnością i przewagą koloru sprawdza jasność względem lokalnego
+otoczenia 31×31 px w obrazie kamery. Parametr **Kontrast lokalny lasera** ma
+wartość początkową 8; CLI `--local-contrast 0` wyłącza ten filtr i zachowuje
+poprzedni wybór najjaśniejszej plamki. Większy próg lepiej odcina równomiernie
+zabarwione tło, ale może odrzucić słaby laser. W aktywnym trybie nowy wybór plamki
+preferuje lokalny kontrast. Maska normalnego treningu jest ograniczona do
+potwierdzonych czterech rogów projekcji; w teście można badać cały obraz kamery.
+Algorytm nie odzyska koloru utraconego wskutek prześwietlenia ani pominiętego impulsu.
+
+W **Teście wykrywania lasera** kliknij kolejno środek, lewą i prawą część projekcji.
+Dla każdego punktu, przy zgaszonym laserze, naciśnij **T**; potem zaświeć w ten punkt
+i naciśnij **L**, gdy plamka jest widoczna. Powtórz także na innym tle przy tej samej
+ręcznej ekspozycji. Dane liczbowe (bez obrazów/wideo) trafiają do
+`aimlab_laser_measurements.csv`: miejsce, etykieta próby, jasność, przewaga koloru,
+kontrast lokalny i decyzja detektora wraz z progami. Etykiety T/L są deklaracją
+użytkownika — nie automatycznym potwierdzeniem obecności lasera. Pomiary pozwalają
+porównać obszary przed dalszym strojeniem zamiast obniżać wszystkie progi w ciemno.
+Suwak **Local contrast** działa na żywo; „Zapisz ustawienia” zachowuje jego wartość.

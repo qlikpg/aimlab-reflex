@@ -36,6 +36,7 @@ def arguments():
     p.add_argument('--screen-y', type=int, default=0)
     p.add_argument('--start-calibration', action='store_true')
     p.add_argument('--status-file', type=Path, help='Live state for the desktop panel')
+    p.add_argument('--local-contrast',type=int,default=8,help='Minimum brightness above local surroundings; 0 disables')
     p.add_argument('--min-area', type=int, default=2)
     p.add_argument('--max-area', type=int, default=1500)
     p.add_argument('--release-ms', type=int, default=150,
@@ -47,6 +48,8 @@ def arguments():
         p.error('Color thresholds must be between 0 and 255')
     if min(a.width, a.height, a.min_area) <= 0 or a.max_area < a.min_area or a.release_ms < 0:
         p.error('Invalid dimensions, area limits, or release time')
+    if not 0 <= a.local_contrast <= 100:
+        p.error('Local contrast must be between 0 and 100')
     if min(a.projector_width, a.projector_height) < 2:
         p.error('Invalid projector dimensions')
     return a
@@ -68,14 +71,28 @@ def detect(frame, a):
         channel, other, minimum, delta = g, r, a.green_min, a.green_delta
     else:
         channel, other, minimum, delta = r, g, a.red_min, a.red_delta
-    mask = ((channel >= minimum) & (channel - other >= delta) & (channel - b >= delta)).astype(np.uint8) * 255
-    count, labels, stats, centers = cv2.connectedComponentsWithStats(mask)
-    candidates = [i for i in range(1, count) if a.min_area <= stats[i, cv2.CC_STAT_AREA] <= a.max_area]
+    selected = (channel >= minimum) & (channel-other >= delta) & (channel-b >= delta)
+    local_limit = getattr(a,'local_contrast',0)
+    contrast = channel.astype(np.float32)-cv2.blur(channel.astype(np.float32),(31,31))
+    if local_limit:
+        selected &= contrast >= local_limit
+    polygon = getattr(a,'detection_polygon',None)
+    if polygon is not None:
+        area = np.zeros(channel.shape,np.uint8)
+        cv2.fillConvexPoly(area,np.int32(np.round(polygon)),255)
+        selected &= area != 0
+    mask = selected.astype(np.uint8)*255
+    count,labels,stats,centers = cv2.connectedComponentsWithStats(mask)
+    candidates = [i for i in range(1,count) if a.min_area <= stats[i,cv2.CC_STAT_AREA] <= a.max_area]
     if not candidates:
-        return mask, None
-    # Prefer the brightest component in the selected channel; area breaks ties.
-    best = max(candidates, key=lambda i: (float(channel[labels == i].mean()), stats[i, cv2.CC_STAT_AREA]))
-    return mask, tuple(float(v) for v in centers[best])
+        return mask,None
+    # Aggregate in one pass, rather than scanning the whole image per component.
+    sizes = stats[:,cv2.CC_STAT_AREA]
+    brightness = np.bincount(labels.ravel(),weights=channel.ravel(),minlength=count)/np.maximum(sizes,1)
+    local_scores = np.bincount(labels.ravel(),weights=contrast.ravel(),minlength=count)/np.maximum(sizes,1)
+    best = max(candidates,key=lambda i: ((float(local_scores[i]) if local_limit else float(brightness[i])),
+                                        float(brightness[i]),sizes[i]))
+    return mask,tuple(float(v) for v in centers[best])
 
 
 def main():
@@ -111,6 +128,8 @@ def main():
     def open_mask():
         cv2.namedWindow('Laser mask', cv2.WINDOW_AUTOSIZE)
         color = a.laser_color
+        cv2.createTrackbar('Local contrast', 'Laser mask', a.local_contrast, 100,
+                          lambda value: setattr(a,'local_contrast',value))
         cv2.createTrackbar('Brightness min', 'Laser mask', getattr(a, color + '_min'), 255,
                           lambda value: setattr(a, color + '_min', value))
         cv2.createTrackbar('Color difference', 'Laser mask', getattr(a, color + '_delta'), 255,
@@ -190,6 +209,7 @@ def main():
                              'laser_test': a.laser_test, 'detection_test': test_report,
                              'calibrating': calibrating, 'camera': a.camera, 'frame_size': shape,
                              'laser_color': a.laser_color,
+                             'local_contrast': a.local_contrast,
                              'minimum': getattr(a, a.laser_color + '_min'),
                              'delta': getattr(a, a.laser_color + '_delta')}
                     temporary = a.status_file.with_suffix('.tmp')
@@ -197,6 +217,7 @@ def main():
                     temporary.replace(a.status_file)
                     last_status = now
                 frames += 1
+                a.detection_polygon = points if matrix is not None and not calibrating and not a.laser_test else None
                 mask, spot = detect(frame, a)
                 overlay = mask_overlay(frame, mask) if show_mask else None
                 if a.laser_test:
@@ -243,6 +264,10 @@ def main():
                     break
                 if key == ord('b'):
                     raw_mask = not raw_mask
+                elif a.laser_test and key in (ord('t'),ord('l')) and test_report['selected']:
+                    from aimlab_laser_test import save_measurement
+                    save_measurement(a.output.parent/'aimlab_laser_measurements.csv',test_report,test_point,a,'laser' if key==ord('l') else 'background')
+                    print('Zapisano pomiar w punkcie:',test_point,flush=True)
                 elif key == ord('n') and a.laser_test:
                     test_counter = DetectionCounter()
                 elif key == ord('n') and check:

@@ -154,6 +154,7 @@ def main():
     p.add_argument('--green-delta', type=int, default=45)
     p.add_argument('--red-min', type=int, default=210)
     p.add_argument('--red-delta', type=int, default=65)
+    p.add_argument('--local-contrast',type=int,default=8)
     p.add_argument('--min-area', type=int, default=2)
     p.add_argument('--max-area', type=int, default=1500)
     a = p.parse_args()

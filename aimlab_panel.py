@@ -58,11 +58,11 @@ class Panel(Gtk.Window):
         grid = Gtk.Grid(column_spacing=18, row_spacing=10)
         box.pack_start(grid, False, False, 0)
         self.fields = {}
-        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('background_style','Tło'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
+        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('local_contrast','Kontrast lokalny lasera'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('background_style','Tło'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
             if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method', 'target_style', 'background_style'):
                 field = Gtk.ComboBoxText()
             else:
-                low, high = (1,100) if key == 'targets' else ((1,24) if key == 'active_targets' else ((5,300) if key == 'radius' else (0,255)))
+                low, high = (1,100) if key == 'targets' else ((1,24) if key == 'active_targets' else ((5,300) if key == 'radius' else ((0,100) if key == 'local_contrast' else (0,255))))
                 field = Gtk.SpinButton.new_with_range(low, high, 1)
                 field.set_value(self.settings[key])
             field.set_hexpand(True)
@@ -170,8 +170,8 @@ class Panel(Gtk.Window):
             a['camera'] = self.settings['camera']
         state = self.state()
         if state:
-            a.update(minimum=state['minimum'], delta=state['delta'], color=state['laser_color'])
-            for key in ('minimum','delta'):
+            a.update(local_contrast=state.get('local_contrast',a['local_contrast']),minimum=state['minimum'], delta=state['delta'], color=state['laser_color'])
+            for key in ('minimum','delta','local_contrast'):
                 self.fields[key].set_value(a[key])
         target = ROOT/'aimlab_settings.json'
         temp = target.with_suffix('.tmp')
@@ -198,7 +198,7 @@ class Panel(Gtk.Window):
             raise RuntimeError('Podłącz kamerę i wybierz ją na liście.')
         self.save()
         a = self.settings
-        args = ['--camera',camera,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--status-file',str(self.state_path)]
+        args = ['--camera',camera,'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--local-contrast',str(a['local_contrast']),'--status-file',str(self.state_path)]
         if show_mask or '--laser-test' in (extra_args or []):
             args.append('--show-mask')
         if calibration:
@@ -272,7 +272,7 @@ class Panel(Gtk.Window):
         self.save()
         a = self.settings
         self.calibration_report.unlink(missing_ok=True)
-        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,'--report-file',str(self.calibration_report),*args,'--background-style',a['background_style'],'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta'])])
+        self.spawn('projector','aimlab_video_calibration.py',['--camera',camera,'--report-file',str(self.calibration_report),*args,'--background-style',a['background_style'],'--laser-color',a['color'],f'--{a["color"]}-min',str(a['minimum']),f'--{a["color"]}-delta',str(a['delta']),'--local-contrast',str(a['local_contrast'])])
         self.video_running = True
         self.message = 'Kalibracja wideo: strzelaj w środek tarczy. Następny cel po impulsie. Gaś laser między strzałami; nie ruszaj kamerą. Nagranie zostanie usunięte; wynik w aimlab_panel.log.'
 
@@ -503,7 +503,7 @@ class Panel(Gtk.Window):
         for widget in self.buttons:
             widget.set_sensitive(not self.stopping and not self.pending and not getattr(self,'video_running',False) and not self.calibration_stage and not self.pending_laser_test)
         for key,field in self.fields.items():
-            hardware = key in ('camera','color','minimum','delta')
+            hardware = key in ('camera','color','minimum','delta','local_contrast')
             enabled = not self.stopping and not self.pending and not self.running('training') and not getattr(self,'video_running',False) and not self.calibration_stage and not self.pending_laser_test
             if hardware and self.running('camera'):
                 enabled = False

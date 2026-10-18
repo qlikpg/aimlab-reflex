@@ -20,6 +20,10 @@ def inspect_detection(frame, mask, spot, args, point, radius=35):
     brightness,delta = int(channel[py,px]),int(contrast[py,px])
     minimum = getattr(args,args.laser_color+'_min')
     required_delta = getattr(args,args.laser_color+'_delta')
+    selected_channel = frame[:,:,1 if args.laser_color == 'green' else 2].astype(np.float32)
+    local_map = selected_channel-cv2.blur(selected_channel,(31,31))
+    local_value = float(local_map[y0+py,x0+px])
+    local_limit = getattr(args,'local_contrast',0)
     detected = spot is not None and x0<=spot[0]<x1 and y0<=spot[1]<y1
     reasons = []
     if not detected:
@@ -27,12 +31,15 @@ def inspect_detection(frame, mask, spot, args, point, radius=35):
             reasons.append('Jasnosc ponizej progu')
         if delta<required_delta:
             reasons.append('Za mala przewaga koloru / przeswietlenie')
+        if local_limit and local_value < local_limit:
+            reasons.append('Plamka za malo jasna wzgledem otoczenia')
         if not reasons:
-            reasons.append('Rozmiar plamki poza limitem lub detektor wybral inny punkt')
+            reasons.append('Rozmiar plamki / kontrast lokalny / detektor wybral inny punkt')
     return dict(selected=True,detected=bool(detected),reason='WYKRYTO' if detected else '; '.join(reasons),
                 brightness=brightness,minimum=minimum,delta=delta,required_delta=required_delta,
                 roi=[x0,y0,x1,y1],bgr=[int(v) for v in pixels[py,px]],
                 masked_pixels=int(np.count_nonzero(mask[y0:y1,x0:x1])),
+                local_contrast_limit=int(local_limit),local_contrast_value=round(local_value,2),
                 other_detected=bool(spot is not None and not detected))
 
 
@@ -68,7 +75,22 @@ def draw_diagnostic(frame, report, counter, now):
                   f"BGR {report['bgr']} | piksele maski w polu: {report['masked_pixels']}"]
     age = '-' if counter.last_detection is None else f'{now-counter.last_detection:.1f}s temu'
     lines += [f'Impulsy po zwolnieniu: {counter.count} | ostatnie wykrycie: {age}',
+              f"Kontrast lokalny: {report.get('local_contrast_value',0):.1f} (min {report.get('local_contrast_limit',0)}) | T: bez lasera | L: z laserem",
               'Progi: suwaki w Laser mask. Zgas laser na 150 ms miedzy impulsami.']
     cv2.rectangle(frame,(0,0),(frame.shape[1]-1,22+len(lines)*24),(20,20,20),-1)
     for index,line in enumerate(lines):
         cv2.putText(frame,line,(10,24+index*24),cv2.FONT_HERSHEY_SIMPLEX,.52,(255,255,255),1)
+
+
+def save_measurement(path, report, point, args, label):
+    import csv
+    from datetime import datetime, timezone
+    exists = path.exists() and path.stat().st_size>0
+    fields = ['utc','camera','x','y','label','brightness','delta','detected','minimum','required_delta','local_contrast','local_contrast_value']
+    with path.open('a',newline='',encoding='utf-8') as stream:
+        writer = csv.writer(stream)
+        if not exists:
+            writer.writerow(fields)
+        writer.writerow([datetime.now(timezone.utc).isoformat(),args.camera,*point,label,
+                         report['brightness'],report['delta'],report['detected'],
+                         report['minimum'],report['required_delta'],getattr(args,'local_contrast',0),report.get('local_contrast_value',0)])
