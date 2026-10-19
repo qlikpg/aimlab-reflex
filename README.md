@@ -383,3 +383,5 @@ są odrzucane. Hałas, rozmowy i dźwięk telewizora mogą powodować błędy �
 rozpoznawanie własnym głosem przed sesją. Pozostałe tryby nie wymagają Vosk ani mikrofonu.
 
 W trybie głosowym cele (razem z obrysem) pojawiają się wyłącznie w górnej połowie obrazu. Stała niebieska kreska jest na środku osi X, od dolnej krawędzi na wysokość 1/8 ekranu. Jej grubość to 1/8 szerokości celu (czyli 1/4 promienia), po skalowaniu; przy promieniu 70 px wynosi 18 px. Kreska jest wskazówką wizualną i nie jest celem.
+
+Po „DAJ” tryb głosowy pokazuje najpierw wskazówkę przez 0,5 s od jej wyświetlenia. Jest to niepunktowany cel na wysokości górnego końca niebieskiej kreski (1/8 ekranu od dołu), w osi X przyszłego celu właściwego. Wskazówka znika, a cel właściwy pojawia się w górnej połowie obrazu. Strzały podczas wskazówki nie zwiększają trafień ani pudeł; nie uruchamiają dzwoneczka i nie są zapisywane jako strzały treningowe. Kolejne komendy podczas wskazówki są ignorowane. Restart kasuje wskazówkę i zaplanowany cel.

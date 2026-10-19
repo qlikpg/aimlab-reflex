@@ -135,7 +135,9 @@ class TargetStyleTests(unittest.TestCase):
                 game.start(10)
                 if mode == 'voice':
                     game.activate_voice(10,10)
-                game.presented(10.1)
+                    game.presented(10)
+                    game.tick(10.5)
+                game.presented(10.6 if mode == 'voice' else 10.1)
                 target=game.targets[0]
                 sprite=appearance.prepare(target.radius)
                 left,top=sprite.origin(target)

@@ -233,7 +233,8 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
     footer_y = 110*scale if game.config.mode in ('trap-spidershot','voice') else h-24*scale
     text('Q / Esc: exit | SPACE: restart | Release laser between shots',20*scale,footer_y,.65 if game.config.mode in ('trap-spidershot','voice') else .75)
     if game.state == 'running':
-        for target in game.targets:
+        visible = [game.voice_preview] if game.voice_preview is not None else game.targets
+        for target in visible:
             if target.active:
                 if appearance is None:
                     draw_target(image,(round(target.x),round(target.y)),round(target.radius))
@@ -320,7 +321,7 @@ def main():
                         feedback,feedback_until = '',0
                 if not voice.ready:
                     feedback,feedback_until = 'Loading Polish voice model...',frame_start+1
-                elif game.state == 'running' and not game.targets:
+                elif game.state == 'running' and not game.targets and game.voice_preview is None:
                     feedback,feedback_until = 'Powiedz DAJ',frame_start+1
             if reader:
                 generation = reader.generation

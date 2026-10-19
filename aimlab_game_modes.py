@@ -111,6 +111,8 @@ class Game:
                      and not (left <= self.center[0] <= right and top <= self.center[1] <= bottom)))):
             raise ValueError('Too little space for center and side targets: decrease radius')
         self.targets = []
+        self.voice_preview = None
+        self.voice_destination = None
         self.started_at = None
         self.ended_at = None
         self.last_event = -math.inf
@@ -157,16 +159,20 @@ class Game:
 
     def activate_voice(self, stamp, now):
         self.tick(now)
-        if (self.config.mode != 'voice' or self.state != 'running' or self.targets
+        if (self.config.mode != 'voice' or self.state != 'running' or self.targets or self.voice_preview is not None
                 or not math.isfinite(stamp) or stamp < self.voice_ready_at or stamp > now):
             return False
-        self._random_target()
+        self.voice_destination = self.rng.choice(self.slots)
+        hint_y = self.config.height-max(1,round(self.config.height/8))
+        self.voice_preview = Target(0,self.voice_destination[0],hint_y,self.radius,role='preview')
         self.voice_ready_at = now
         return True
 
     def presented(self, now):
         """Call after imshow/waitKey; newly drawn targets become eligible only now."""
         if self.state == 'running':
+            if self.voice_preview is not None and self.voice_preview.activated_at is None:
+                self.voice_preview.activated_at = now
             for target in self.targets:
                 if target.activated_at is None:
                     target.activated_at = now
@@ -174,6 +180,10 @@ class Game:
     def tick(self, now):
         if self.state != 'running':
             return
+        if (self.voice_preview is not None and self.voice_preview.activated_at is not None
+                and now >= self.voice_preview.activated_at+.5):
+            self._target(self.voice_destination)
+            self.voice_preview = self.voice_destination = None
         if self.config.mode not in ('classic','voice') and now >= self.started_at+self.config.duration:
             self.finish(self.started_at+self.config.duration)
         elif self.next_ready is not None and now >= self.next_ready:
@@ -184,6 +194,7 @@ class Game:
         if self.state == 'running':
             self.ended_at = now
             self.state = 'finished'
+            self.voice_preview = self.voice_destination = None
             for target in self.targets:
                 target.active = False
 

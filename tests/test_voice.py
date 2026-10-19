@@ -12,6 +12,8 @@ class VoiceTests(unittest.TestCase):
         self.assertTrue(game.activate_voice(11,12))
         self.assertFalse(game.activate_voice(12,13))
         game.presented(12)
+        game.tick(12.5)
+        game.presented(12.6)
         target = game.targets[0]
         shot=game.fire(13,target.x/1919,target.y/1079,13)
         self.assertEqual(shot.result,'hit')
@@ -21,6 +23,8 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(game.state,'running')
         self.assertTrue(game.activate_voice(100,101))
         game.presented(101)
+        game.tick(101.5)
+        game.presented(101.6)
         target=game.targets[0]
         game.fire(102,target.x/1919,target.y/1079,102)
         self.assertEqual(game.state,'finished')
@@ -36,10 +40,12 @@ class VoiceTests(unittest.TestCase):
             game.start(0)
             for index in range(50):
                 self.assertTrue(game.activate_voice(index*2,index*2))
+                game.presented(index*2)
+                game.tick(index*2+.5)
                 target=game.targets[0]
                 self.assertLess(target.y+target.radius+6,height/2)
                 self.assertGreaterEqual(target.y-target.radius,0)
-                game.presented(index*2+.1)
+                game.presented(index*2+.6)
                 game.fire(index*2+1,target.x/(width-1),target.y/(height-1),index*2+1)
                 if game.state=='finished':
                     game.start(index*2+1)
@@ -55,6 +61,31 @@ class VoiceTests(unittest.TestCase):
         self.assertEqual(xs.max()-xs.min()+1,18)
         self.assertEqual((xs.min()+xs.max())/2,959.5)
         self.assertEqual(image[:,:,1:].sum(),0)
+
+    def test_preview_waits_half_second_and_never_scores(self):
+        game = Game(Config(mode='voice'))
+        game.start(10)
+        game.activate_voice(11,11)
+        hint = game.voice_preview
+        destination = game.voice_destination
+        self.assertEqual(hint.y,945)
+        self.assertEqual(hint.x,destination[0])
+        self.assertFalse(game.targets)
+        game.tick(20)  # Timing starts only after the cue was actually presented.
+        self.assertIs(game.voice_preview,hint)
+        game.presented(20)
+        self.assertIsNone(game.fire(20.1,hint.x/1919,hint.y/1079,20.1))
+        self.assertEqual((game.hits,game.misses),(0,0))
+        self.assertFalse(game.activate_voice(20.2,20.2))
+        game.tick(20.499)
+        self.assertIs(game.voice_preview,hint)
+        game.tick(20.5)
+        self.assertIsNone(game.voice_preview)
+        self.assertEqual((game.targets[0].x,game.targets[0].y),destination)
+        self.assertIsNone(game.targets[0].activated_at)
+        game.start(30)
+        self.assertIsNone(game.voice_preview)
+        self.assertIsNone(game.voice_destination)
 
     def test_exact_command_with_confidence(self):
         result=dict(text='daj',result=[dict(word='daj',conf=.95,start=1.2)])
