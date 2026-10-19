@@ -50,7 +50,7 @@ class VoiceTests(unittest.TestCase):
         image=np.zeros((1080,1920,3),np.uint8)
         draw_voice_guide(image,70)
         ys,xs=np.where(image[:,:,0]==255)
-        self.assertEqual(ys.min(),720)
+        self.assertEqual(ys.min(),945)
         self.assertEqual(ys.max(),1079)
         self.assertEqual(xs.max()-xs.min()+1,18)
         self.assertEqual((xs.min()+xs.max())/2,959.5)

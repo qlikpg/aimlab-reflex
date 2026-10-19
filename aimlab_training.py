@@ -212,7 +212,7 @@ def draw_voice_guide(image, radius):
     height,width = image.shape[:2]
     thickness = max(1,round(2*radius/8))
     left = (width-thickness)//2
-    top = height-max(1,round(height/3))
+    top = height-max(1,round(height/8))
     cv2.rectangle(image,(left,top),(left+thickness-1,height-1),(255,0,0),-1)
 
 
