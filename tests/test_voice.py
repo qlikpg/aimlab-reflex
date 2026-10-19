@@ -69,7 +69,8 @@ class VoiceTests(unittest.TestCase):
         hint = game.voice_preview
         destination = game.voice_destination
         self.assertEqual(hint.y,945)
-        self.assertEqual(hint.x,destination[0])
+        self.assertLess(abs(hint.x-959.5),abs(destination[0]-959.5))
+        self.assertLessEqual(abs(hint.x-959.5),1920/8)
         self.assertFalse(game.targets)
         game.tick(20)  # Timing starts only after the cue was actually presented.
         self.assertIs(game.voice_preview,hint)
@@ -86,6 +87,22 @@ class VoiceTests(unittest.TestCase):
         game.start(30)
         self.assertIsNone(game.voice_preview)
         self.assertIsNone(game.voice_destination)
+
+    def test_preview_is_compressed_towards_center_for_diagonal_movement(self):
+        from unittest.mock import patch
+        for width,height in ((1920,1080),(960,540)):
+            game=Game(Config(mode='voice',width=width,height=height))
+            center=(width-1)/2
+            self.assertTrue(all(abs(p[0]-center)>1e-6 for p in game.voice_slots))
+            for point in (min(game.voice_slots),max(game.voice_slots)):
+                game.start(0)
+                with patch.object(game.rng,'choice',return_value=point):
+                    game.activate_voice(1,1)
+                hint=game.voice_preview
+                self.assertAlmostEqual(abs(hint.x-center),width/8)
+                self.assertGreater((hint.x-center)*(point[0]-center),0)
+                self.assertLess(abs(hint.x-center),abs(point[0]-center))
+                self.assertNotEqual(hint.x,point[0])
 
     def test_exact_command_with_confidence(self):
         result=dict(text='daj',result=[dict(word='daj',conf=.95,start=1.2)])

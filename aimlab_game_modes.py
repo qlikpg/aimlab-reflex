@@ -101,6 +101,9 @@ class Game:
                       for ix in range(nx) for iy in range(ny)]
         if len(self.slots) < self.count:
             raise ValueError(f'Cannot place {self.count} non-overlapping targets: increase space or decrease radius')
+        self.voice_slots = [p for p in self.slots if abs(p[0]-(config.width-1)/2)>1e-6]
+        if config.mode == 'voice' and not self.voice_slots:
+            raise ValueError('Too little lateral space for voice targets: decrease radius')
         self.center = ((config.width-1)/2, (config.height-1)/2)
         if config.mode == 'trap-spidershot':
             # The active blue circle is tangent to the last projector pixel row.
@@ -162,9 +165,13 @@ class Game:
         if (self.config.mode != 'voice' or self.state != 'running' or self.targets or self.voice_preview is not None
                 or not math.isfinite(stamp) or stamp < self.voice_ready_at or stamp > now):
             return False
-        self.voice_destination = self.rng.choice(self.slots)
+        self.voice_destination = self.rng.choice(self.voice_slots)
+        center_x = (self.config.width-1)/2
+        offset = self.voice_destination[0]-center_x
+        extent = self.bounds[1]-center_x if offset>0 else center_x-self.bounds[0]
+        hint_x = center_x+(offset/max(extent,1))*self.config.width/8
         hint_y = self.config.height-max(1,round(self.config.height/8))
-        self.voice_preview = Target(0,self.voice_destination[0],hint_y,self.radius,role='preview')
+        self.voice_preview = Target(0,hint_x,hint_y,self.radius,role='preview')
         self.voice_ready_at = now
         return True
 
