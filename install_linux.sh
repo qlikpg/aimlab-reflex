@@ -5,7 +5,7 @@ cd "$project_dir"
 
 echo 'Instalowanie Pythona, obsługi środowisk i bibliotek kamery...'
 sudo apt-get update
-sudo apt-get install -y python3 python3-venv python3-pip python3-gi gir1.2-gtk-3.0 libgl1 libglib2.0-0t64 librsvg2-2 libcairo2 v4l-utils
+sudo apt-get install -y python3 python3-venv python3-pip python3-gi gir1.2-gtk-3.0 libgl1 libglib2.0-0t64 librsvg2-2 libcairo2 v4l-utils pulseaudio-utils
 
 python3 -m venv .venv
 .venv/bin/python -m pip install -r aimlab_requirements.txt

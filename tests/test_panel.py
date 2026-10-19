@@ -143,6 +143,16 @@ class PanelTests(unittest.TestCase):
             start.assert_not_called()
             self.assertIn('white',self.window.pending_test_background)
 
+    def test_voice_mode_has_single_target_and_counted_session(self):
+        self.window.fields['mode'].set_active_id('voice')
+        self.window.poll()
+        self.assertEqual(self.window.fields['mode'].get_active_text(),'Głosowy (DAJ)')
+        self.assertFalse(self.window.fields['duration'].get_sensitive())
+        self.assertFalse(self.window.fields['active_targets'].get_sensitive())
+        self.assertTrue(self.window.fields['targets'].get_sensitive())
+        self.window.save()
+        self.assertEqual(panel.load_settings()['mode'],'voice')
+
     def test_mode_defaults_and_control_sensitivity(self):
         for name,radius,count in [('gridshot',70,3),('sixshot',30,6),('multishot',55,5),('spidershot',70,1),('trap-spidershot',70,1),('classic',70,1)]:
             self.window.fields['mode'].set_active_id(name)

@@ -355,3 +355,29 @@ kontrast lokalny i decyzja detektora wraz z progami. Etykiety T/L są deklaracj�
 użytkownika — nie automatycznym potwierdzeniem obecności lasera. Pomiary pozwalają
 porównać obszary przed dalszym strojeniem zamiast obniżać wszystkie progi w ciemno.
 Suwak **Local contrast** działa na żywo; „Zapisz ustawienia” zachowuje jego wartość.
+
+### Tryb Głosowy — komenda „DAJ”
+
+Wybierz **Głosowy (DAJ)** w panelu i uruchom trening. Po odliczaniu pojawi się
+napis „Powiedz DAJ”. Powiedz wyraźnie **DAJ**, a pojawi się jeden losowy cel.
+Pudło pozostawia cel, trafienie usuwa go i ponownie uruchamia oczekiwanie na DAJ.
+Komendy podczas widocznego celu są ignorowane, bez kolejki. Sesja kończy się po
+10 trafieniach (liczbę zmienisz w panelu). Spacja restartuje sesję; Q/Esc lub STOP
+kończy ją i zwalnia mikrofon. Można łączyć głos z testem myszą zamiast lasera.
+
+Rozpoznawanie polskiej mowy działa lokalnie, opcjonalną biblioteką Vosk i modelem
+`vosk-model-small-pl-0.22` (około 51 MB pobierania; Apache 2.0). Przygotowanie:
+`bash install_voice.sh`. W obecnym środowisku jest już zainstalowane. Model jest
+w `models/`, poza repozytorium; instalator pobiera go z oficjalnego serwera
+[Dokumentacja Vosk](https://alphacephei.com/vosk/).
+Rozpoznawanie bazuje na [oficjalnym przykładzie Vosk](https://github.com/alphacep/vosk-api/blob/master/python/example/test_words.py).
+
+Mikrofon to domyślne wejście systemu Linux/PulseAudio; ustaw go w ustawieniach
+dźwięku. CLI `--voice-source NAZWA` pozwala wybrać inne źródło. Wymagany `parec`
+(pakiet `pulseaudio-utils`). Dźwięk nie jest zapisywany ani wysyłany do sieci.
+Rozpoznawanie działa w osobnym procesie i nie blokuje obrazu. Czekamy na końcowy
+wynik pojedynczego słowa „daj” z pewnością ≥0,75, więc reakcja wymaga chwili ciszy
+po komendzie. Początek wypowiedzi musi przypadać po rozpoczęciu oczekiwania;
+komendy sprzed odliczania, restartu lub wypowiedziane podczas poprzedniego celu
+są odrzucane. Hałas, rozmowy i dźwięk telewizora mogą powodować błędy — sprawdź
+rozpoznawanie własnym głosem przed sesją. Pozostałe tryby nie wymagają Vosk ani mikrofonu.

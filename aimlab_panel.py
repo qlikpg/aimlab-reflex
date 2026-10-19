@@ -58,7 +58,7 @@ class Panel(Gtk.Window):
         grid = Gtk.Grid(column_spacing=18, row_spacing=10)
         box.pack_start(grid, False, False, 0)
         self.fields = {}
-        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('local_contrast','Kontrast lokalny lasera'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('background_style','Tło'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
+        for row, (key, label) in enumerate([('camera','Kamera'), ('screen','Ekran rzutnika'), ('color','Kolor lasera'), ('minimum','Minimalna jasność'), ('delta','Przewaga koloru'), ('local_contrast','Kontrast lokalny lasera'), ('mode','Tryb treningu'), ('target_style','Wygląd celu'), ('background_style','Tło'), ('duration','Czas sesji (sekundy)'), ('active_targets','Aktywne cele jednocześnie'), ('targets','Cele do ukończenia Classic / Głosowy'), ('radius','Promień celu (px przy 1920×1080)'), ('input_method','Sterowanie')]):
             if key in ('camera', 'screen', 'color', 'mode', 'duration', 'input_method', 'target_style', 'background_style'):
                 field = Gtk.ComboBoxText()
             else:
@@ -72,7 +72,7 @@ class Panel(Gtk.Window):
         self.fields['color'].append('green','Zielony')
         self.fields['color'].append('red','Czerwony')
         self.fields['color'].set_active_id(self.settings['color'])
-        for key, choices in [('mode', [(key,mode.name) for key,mode in MODES.items()]),
+        for key, choices in [('mode', [(key,'Głosowy (DAJ)' if key == 'voice' else mode.name) for key,mode in MODES.items()]),
                              ('duration', [(str(n),str(n)) for n in (30,60,120)]),
                              ('background_style',[('meadow','Łąka'),('black','Całe czarne'),('white','Całe białe')]),
                              ('target_style', [('orange','Pomarańczowy'),('black','Czarny'),('orange-black','Pomarańczowo-czarny'),('classic','Klasyczny — niebieskie koło')]),
@@ -399,6 +399,10 @@ class Panel(Gtk.Window):
     def train(self):
         if self.running('training'):
             return
+        if self.fields['mode'].get_active_id() == 'voice':
+            check = subprocess.run([str(ROOT/'.venv/bin/python'),'-c','from aimlab_voice import check_voice_available; check_voice_available()'],cwd=ROOT,capture_output=True,text=True,timeout=10)
+            if check.returncode:
+                raise RuntimeError(check.stderr.strip().splitlines()[-1])
         args = self.screen_args()
         mouse = self.fields['input_method'].get_active_id() == 'mouse'
         if not mouse:
@@ -408,7 +412,7 @@ class Panel(Gtk.Window):
                 raise RuntimeError('Kamera wymaga kalibracji lub jeszcze się uruchamia. Poczekaj na status gotowa.')
         mode = self.fields['mode'].get_active_id()
         radius = self.fields['radius'].get_value_as_int()
-        count = self.fields['active_targets'].get_value_as_int() if mode not in ('classic','spidershot','trap-spidershot') else 1
+        count = self.fields['active_targets'].get_value_as_int() if mode not in ('classic','voice','spidershot','trap-spidershot') else 1
         w,h = self.screens[int(self.fields['screen'].get_active_id())][:2]
         duration = int(self.fields['duration'].get_active_id())
         try:
@@ -508,11 +512,11 @@ class Panel(Gtk.Window):
             if hardware and self.running('camera'):
                 enabled = False
             mode = self.fields['mode'].get_active_id()
-            if key == 'duration' and mode == 'classic':
+            if key == 'duration' and mode in ('classic','voice'):
                 enabled = False
-            if key == 'targets' and mode != 'classic':
+            if key == 'targets' and mode not in ('classic','voice'):
                 enabled = False
-            if key == 'active_targets' and mode in ('classic','spidershot','trap-spidershot'):
+            if key == 'active_targets' and mode in ('classic','voice','spidershot','trap-spidershot'):
                 enabled = False
             field.set_sensitive(enabled)
         if self.closing and not self.children:

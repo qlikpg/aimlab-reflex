@@ -24,6 +24,6 @@ def migrate_settings(data):
             values[key] = data[key]
     if type(data.get('duration')) is int and data['duration'] in (30,60,120):
         values['duration'] = data['duration']
-    if values['mode'] in ('classic','spidershot','trap-spidershot','video-calibration'):
+    if values['mode'] in ('classic','voice','spidershot','trap-spidershot','video-calibration'):
         values['active_targets'] = 1
     return values

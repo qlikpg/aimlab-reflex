@@ -25,6 +25,8 @@ class LoopTests(unittest.TestCase):
                     game=Game(config, **kwargs)
                     games.append(game)
                     return game
+                def voice_events():
+                    return [clock[0]] if games and games[-1].state=='running' and not games[-1].targets else []
                 def wait_key(delay):
                     frames[0]+=1
                     self.assertLess(frames[0],250,'Training loop failed to complete')
@@ -48,12 +50,16 @@ class LoopTests(unittest.TestCase):
                       '--width','960','--height','540','--hits',str(Path(directory)/'no_camera_needed.csv')]
                 with patch.object(training.sys,'argv',args),patch.object(training,'Game',side_effect=factory), \
                      patch.object(training,'HitSound') as sound, \
+                     patch.object(training,'VoiceInput') as voice, \
                      patch.object(training.time,'monotonic',side_effect=lambda:clock[0]), \
                      patch.object(cv2,'namedWindow'),patch.object(cv2,'moveWindow'), \
                      patch.object(cv2,'setWindowProperty'),patch.object(cv2,'imshow'), \
                      patch.object(cv2,'getWindowProperty',return_value=1),patch.object(cv2,'destroyAllWindows'), \
                      patch.object(cv2,'setMouseCallback',side_effect=lambda name,fn:callback.append(fn)), \
                      patch.object(cv2,'waitKey',side_effect=wait_key),contextlib.redirect_stdout(io.StringIO()):
+                    voice.return_value.ready=True
+                    voice.return_value.error=None
+                    voice.return_value.read.side_effect=voice_events
                     training.main()
                 self.assertTrue(sound.return_value.play.called)
                 sound.return_value.close.assert_called_once()
@@ -70,7 +76,7 @@ class LoopTests(unittest.TestCase):
                 self.assertTrue(any(row['result']=='miss' for row in shots))
                 self.assertTrue(all(r['source']=='mouse' for r in shots))
                 self.assertTrue(all(int(r['hits'])>0 for r in summaries))
-                if mode=='classic':
+                if mode in ('classic','voice'):
                     self.assertTrue(all(int(r['hits'])==2 for r in summaries))
 
 

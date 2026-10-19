@@ -28,3 +28,5 @@ PROJECT_STATE.md
 aimlab_calibration_report.json
 aimlab_calibration_report.tmp
 aimlab_calibration.previous.json
+
+models/

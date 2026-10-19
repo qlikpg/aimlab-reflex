@@ -12,6 +12,7 @@ class Mode:
 
 
 MODES = {
+    'voice': Mode('Glosowy (DAJ)',70,1),
     'classic': Mode('Classic', 70, 1),
     'gridshot': Mode('Gridshot', 70, 3),
     'sixshot': Mode('Sixshot', 30, 6),
@@ -78,7 +79,7 @@ class Game:
         self.count = self.mode.count if config.active_count is None else config.active_count
         if type(self.count) is not int or not 1 <= self.count <= 24:
             raise ValueError('Active target count must be between 1 and 24')
-        if config.mode in ('classic', 'spidershot', 'trap-spidershot') and self.count != 1:
+        if config.mode in ('classic', 'voice', 'spidershot', 'trap-spidershot') and self.count != 1:
             raise ValueError('Classic, Spidershot and Trap-spidershot have exactly one active target')
         self.rng = rng if rng is not None else random.Random()
         # Include target outlines, HUD strips and a minimum gap between visible circles.
@@ -142,11 +143,23 @@ class Game:
         self.__dict__.update(fresh.__dict__)
         self.started_at = now
         self.state = 'running'
+        self.voice_ready_at = now
+        if self.config.mode == 'voice':
+            return
         if self.config.mode in ('spidershot','trap-spidershot'):
             self._target(self.center, 'center')
         else:
             for _ in range(self.count):
                 self._random_target()
+
+    def activate_voice(self, stamp, now):
+        self.tick(now)
+        if (self.config.mode != 'voice' or self.state != 'running' or self.targets
+                or not math.isfinite(stamp) or stamp < self.voice_ready_at or stamp > now):
+            return False
+        self._random_target()
+        self.voice_ready_at = now
+        return True
 
     def presented(self, now):
         """Call after imshow/waitKey; newly drawn targets become eligible only now."""
@@ -158,7 +171,7 @@ class Game:
     def tick(self, now):
         if self.state != 'running':
             return
-        if self.config.mode != 'classic' and now >= self.started_at+self.config.duration:
+        if self.config.mode not in ('classic','voice') and now >= self.started_at+self.config.duration:
             self.finish(self.started_at+self.config.duration)
         elif self.next_ready is not None and now >= self.next_ready:
             self.next_ready = None
@@ -199,9 +212,11 @@ class Game:
         target.active = False
         self.targets.remove(target)
         mode = self.config.mode
-        if mode == 'classic':
+        if mode in ('classic','voice'):
             if self.hits >= self.config.classic_total:
                 self.finish(now)
+            elif mode == 'voice':
+                self.voice_ready_at = now
             else:
                 self.next_ready = now+.6
         elif mode in ('spidershot','trap-spidershot'):
@@ -237,6 +252,6 @@ class Game:
                 'full_cycles': self.cycles}
 
     def remaining(self, now):
-        if self.config.mode == 'classic':
+        if self.config.mode in ('classic','voice'):
             return None
         return max(0,self.config.duration-(now-self.started_at)) if self.started_at is not None else self.config.duration

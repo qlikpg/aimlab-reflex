@@ -133,6 +133,8 @@ class TargetStyleTests(unittest.TestCase):
                 appearance=self.styles['orange']
                 game=Game(Config(mode=mode),random.Random(4),appearance.contains)
                 game.start(10)
+                if mode == 'voice':
+                    game.activate_voice(10,10)
                 game.presented(10.1)
                 target=game.targets[0]
                 sprite=appearance.prepare(target.radius)

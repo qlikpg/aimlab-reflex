@@ -16,6 +16,7 @@ import cv2
 import numpy as np
 
 from aimlab_sound import HitSound
+from aimlab_voice import VoiceInput
 from aimlab_game_modes import Config, Game, MODES, Target
 from aimlab_target_styles import TargetAppearance, STYLES, draw_classic
 
@@ -187,6 +188,7 @@ def arguments():
     p.add_argument('--duration',type=float,default=60)
     p.add_argument('--active-targets',type=int,default=None)
     p.add_argument('--no-hit-sound', action='store_true', help='Disable the hit bell')
+    p.add_argument('--voice-source',help='PulseAudio microphone source; default uses system input')
     p.add_argument('--mouse-test',action='store_true')
     p.add_argument('--background',type=Path,default=DEFAULT_BACKGROUND)
     p.add_argument('--background-style',choices=('meadow','black','white'),default='meadow')
@@ -242,7 +244,7 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
         for i,line in enumerate(lines):
             text(line,w*.12,h*.31+i*52*scale,.95)
     else:
-        line = f'Start in {max(1,math.ceil(ready_at-now))}'
+        line = feedback if game.config.mode == 'voice' and now >= ready_at and feedback else f'Start in {max(1,math.ceil(ready_at-now))}'
         cv2.rectangle(image,(int(w*.3),int(h*.42)),(int(w*.75),int(h*.55)),(20,20,20),-1)
         text(line,w*.33,h*.51,1.8)
     return image
@@ -285,15 +287,31 @@ def main():
         cv2.setMouseCallback(name,mouse.callback)
     print(f'{game.mode.name} started. Input: {"mouse" if a.mouse_test else "laser"}. Results: {output}',flush=True)
     sound = HitSound(enabled=not a.no_hit_sound)
+    voice = None
     try:
+        if a.mode == 'voice':
+            voice = VoiceInput(source=a.voice_source)
         while True:
             frame_start = time.monotonic()
             if game.state == 'idle' and frame_start >= ready_at:
                 if reader:
                     reader.reset()  # Drop every pre-countdown/previous-session row and partial line.
                 mouse.read()
-                game.start(time.monotonic())
+                if voice:
+                    voice.read()
+                if not voice or voice.ready:
+                    game.start(time.monotonic())
             game.tick(frame_start)
+            if voice:
+                if voice.error:
+                    raise RuntimeError(voice.error)
+                for stamp in voice.read():
+                    if game.activate_voice(stamp,time.monotonic()):
+                        feedback,feedback_until = '',0
+                if not voice.ready:
+                    feedback,feedback_until = 'Loading Polish voice model...',frame_start+1
+                elif game.state == 'running' and not game.targets:
+                    feedback,feedback_until = 'Powiedz DAJ',frame_start+1
             if reader:
                 generation = reader.generation
                 events = reader.read()
@@ -340,6 +358,8 @@ def main():
         if game.started_at is not None and not summary_written:
             game.finish(time.monotonic())
             results.write(game,ordinal,session_id,time.monotonic(),reason='stopped')
+        if voice:
+            voice.close()
         sound.close()
         results.close()
         if reader:
