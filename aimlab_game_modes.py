@@ -88,6 +88,9 @@ class Game:
         self.bounds = (border+self.radius+rim, config.width-1-border-self.radius-rim,
                        max(72, 130*self.scale)+self.radius+rim,
                        config.height-1-max(52, 85*self.scale)-self.radius-rim)
+        if config.mode == 'voice':
+            left,right,top,bottom = self.bounds
+            self.bounds = (left,right,top,min(bottom,config.height/2-1-self.radius-rim))
         left, right, top, bottom = self.bounds
         spacing = 2*self.radius + max(12, 18*self.scale)
         if right < left or bottom < top:

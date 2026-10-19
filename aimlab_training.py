@@ -208,10 +208,20 @@ def config_from_args(a):
                   active_count=a.active_targets,classic_total=a.targets)
 
 
+def draw_voice_guide(image, radius):
+    height,width = image.shape[:2]
+    thickness = max(1,round(2*radius/8))
+    left = (width-thickness)//2
+    top = height-max(1,round(height/3))
+    cv2.rectangle(image,(left,top),(left+thickness-1,height-1),(255,0,0),-1)
+
+
 def render_frame(base, game, now, ready_at, feedback='', finished_reason='finished', appearance=None):
     image = base.copy()
     h,w = image.shape[:2]
     scale = max(.4,min(w/1920,h/1080))
+    if game.config.mode == 'voice' and game.state != 'finished':
+        draw_voice_guide(image,game.radius)
     metrics = game.metrics(now)
     if appearance is not None and appearance.warning:
         feedback = (feedback+' | ' if feedback else '')+'SVG unavailable - classic targets'
@@ -220,8 +230,8 @@ def render_frame(base, game, now, ready_at, feedback='', finished_reason='finish
     remaining = game.remaining(now)
     clock = f'{remaining:.1f}s' if remaining is not None else f'{game.hits}/{game.config.classic_total}'
     text(f'{game.mode.name} | {clock} | Hits: {game.hits} | Misses: {game.misses} | Accuracy: {metrics["accuracy_percent"]:.1f}%',20*scale,45*scale)
-    footer_y = 110*scale if game.config.mode == 'trap-spidershot' else h-24*scale
-    text('Q / Esc: exit | SPACE: restart | Release laser between shots',20*scale,footer_y,.65 if game.config.mode == 'trap-spidershot' else .75)
+    footer_y = 110*scale if game.config.mode in ('trap-spidershot','voice') else h-24*scale
+    text('Q / Esc: exit | SPACE: restart | Release laser between shots',20*scale,footer_y,.65 if game.config.mode in ('trap-spidershot','voice') else .75)
     if game.state == 'running':
         for target in game.targets:
             if target.active:

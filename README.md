@@ -381,3 +381,5 @@ po komendzie. Początek wypowiedzi musi przypadać po rozpoczęciu oczekiwania;
 komendy sprzed odliczania, restartu lub wypowiedziane podczas poprzedniego celu
 są odrzucane. Hałas, rozmowy i dźwięk telewizora mogą powodować błędy — sprawdź
 rozpoznawanie własnym głosem przed sesją. Pozostałe tryby nie wymagają Vosk ani mikrofonu.
+
+W trybie głosowym cele (razem z obrysem) pojawiają się wyłącznie w górnej połowie obrazu. Stała niebieska kreska jest na środku osi X, od dolnej krawędzi na wysokość 1/3 ekranu. Jej grubość to 1/8 szerokości celu (czyli 1/4 promienia), po skalowaniu; przy promieniu 70 px wynosi 18 px. Kreska jest wskazówką wizualną i nie jest celem.
